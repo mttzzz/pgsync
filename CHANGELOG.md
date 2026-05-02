@@ -4,6 +4,13 @@ All notable changes to pgsync. Format: [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Added — Phase 3: TUI + ConfigEditor + agent output hardening
+- `internal/tui`: Bubble Tea app shell, state machine, key routing, queue model, screen contracts, responsive layout helpers, and style theme.
+- `internal/tui/screens`: main menu, database list, table selection, plan confirmation, progress/result summaries, and ConfigEditor field metadata with Russian labels/help.
+- `internal/config`: redaction helpers for passwords and proxy credentials.
+- `internal/cli`: global options helpers, config commands (`config`, `config show`, `config path`, `config reset`), TUI/text entrypoints, and text/JSON diagnostic command routing.
+- `cmd/pgsync`: default no-args path launches the TUI runner.
+
 ### Added — Phase 2: Native engine + CLI sync
 - `internal/pgdb`: safe PostgreSQL DSN construction, identifier quoting, and pgx connection adapters.
 - `internal/engine`: stable sync engine contract, typed progress events, and observer fan-out.
