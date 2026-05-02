@@ -6,21 +6,39 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
       - name: Test
         run: go test ./...
-      - name: Build linux amd64
-        run: GOOS=linux GOARCH=amd64 go build -o dist/pgsync-linux-amd64 ./cmd/pgsync
+      - name: Build release artifacts
+        run: |
+          mkdir -p dist
+          version="${GITHUB_REF_NAME#v}"
+          commit="$(git rev-parse --short HEAD)"
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ldflags="-X github.com/mttzzz/pgsync/internal/version.Version=$version -X github.com/mttzzz/pgsync/internal/version.GitCommit=$commit -X github.com/mttzzz/pgsync/internal/version.BuildDate=$date"
+          GOOS=linux GOARCH=amd64 go build -ldflags "$ldflags" -o dist/pgsync-linux-amd64 ./cmd/pgsync
+          GOOS=darwin GOARCH=amd64 go build -ldflags "$ldflags" -o dist/pgsync-darwin-amd64 ./cmd/pgsync
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$ldflags" -o dist/pgsync-darwin-arm64 ./cmd/pgsync
+          GOOS=windows GOARCH=amd64 go build -ldflags "$ldflags" -o dist/pgsync-windows-amd64.exe ./cmd/pgsync
       - name: Checksums
         run: cd dist && sha256sum * > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes "Automated pgsync release $GITHUB_REF_NAME"

@@ -1,0 +1,54 @@
+name: Version Bump
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+
+env:
+  DEFAULT_BRANCH: main
+
+jobs:
+  bump:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Skip release bump commits
+        id: skip
+        run: |
+          msg="$(git log -1 --format=%B)"
+          if echo "$msg" | grep -Eq '\[skip ci\]|chore\(release\): bump version'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Compute next version
+        if: steps.skip.outputs.skip != 'true'
+        id: version
+        run: |
+          next="$(bash scripts/next-version.sh)"
+          current="$(tr -d '[:space:]' < VERSION)"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+      - name: Commit version and tag
+        if: steps.skip.outputs.skip != 'true' && steps.version.outputs.next != steps.version.outputs.current
+        run: |
+          next="${{ steps.version.outputs.next }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash scripts/bump-version.sh "$next"
+          git add VERSION
+          git commit -m "chore(release): bump version to v$next [skip ci]"
+          git tag "v$next"
+          git push origin HEAD:${{ env.DEFAULT_BRANCH }}
+          git push origin "v$next"

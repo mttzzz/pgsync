@@ -45,6 +45,12 @@ make test-integration # requires Docker, pg_dump, and cgo/toolchain for -race
 make build
 ```
 
+## CI and releases
+
+Every push runs build, lint, unit, race, coverage-gate, and integration jobs through GitHub Actions. After CI passes on `main`, `.github/workflows/version-bump.yml` computes the next semantic version, updates `VERSION`, creates a `vX.Y.Z` tag, and pushes it. Tags trigger `.github/workflows/release.yml`, which builds release artifacts with version metadata and publishes a GitHub Release.
+
+See `docs/versioning.md` for bump rules.
+
 ## License
 
 MIT — see `LICENSE`.
