@@ -1,29 +1,33 @@
 schema_version = 1
-tool_version = "18.x"
+tool_version = "18.3"
 
-# URLs and SHA-256 values are placeholders that must be refreshed intentionally
-# when the PostgreSQL 18 patch version changes.
+# PostgreSQL community servers publish source archives as the stable upstream
+# artifact. Release packaging builds/stages platform-specific pg_dump and
+# pg_restore payloads from this exact source archive, then verifies the staged
+# binaries with scripts/verify-pgtools.sh before embedding.
+# Upstream source SHA-256:
+# d95663fbbf3a80f81a9d98d895266bdcb74ba274bcc04ef6d76630a72dee016f
 
 [platforms.windows-amd64]
-url = "https://example.invalid/postgresql-18-windows-amd64.zip"
-archive_sha256 = "replace-with-real-sha256"
+url = "https://ftp.postgresql.org/pub/source/v18.3/postgresql-18.3.tar.bz2"
+archive_sha256 = "d95663fbbf3a80f81a9d98d895266bdcb74ba274bcc04ef6d76630a72dee016f"
 files = ["pg_dump.exe", "pg_restore.exe"]
 expected_binaries = ["pg_dump.exe", "pg_restore.exe"]
 
 [platforms.darwin-arm64]
-url = "https://example.invalid/postgresql-18-darwin-arm64.tar.gz"
-archive_sha256 = "replace-with-real-sha256"
+url = "https://ftp.postgresql.org/pub/source/v18.3/postgresql-18.3.tar.bz2"
+archive_sha256 = "d95663fbbf3a80f81a9d98d895266bdcb74ba274bcc04ef6d76630a72dee016f"
 files = ["pg_dump", "pg_restore"]
 expected_binaries = ["pg_dump", "pg_restore"]
 
 [platforms.darwin-amd64]
-url = "https://example.invalid/postgresql-18-darwin-amd64.tar.gz"
-archive_sha256 = "replace-with-real-sha256"
+url = "https://ftp.postgresql.org/pub/source/v18.3/postgresql-18.3.tar.bz2"
+archive_sha256 = "d95663fbbf3a80f81a9d98d895266bdcb74ba274bcc04ef6d76630a72dee016f"
 files = ["pg_dump", "pg_restore"]
 expected_binaries = ["pg_dump", "pg_restore"]
 
 [platforms.linux-amd64]
-url = "https://example.invalid/postgresql-18-linux-amd64.tar.gz"
-archive_sha256 = "replace-with-real-sha256"
+url = "https://ftp.postgresql.org/pub/source/v18.3/postgresql-18.3.tar.bz2"
+archive_sha256 = "d95663fbbf3a80f81a9d98d895266bdcb74ba274bcc04ef6d76630a72dee016f"
 files = ["pg_dump", "pg_restore"]
 expected_binaries = ["pg_dump", "pg_restore"]
