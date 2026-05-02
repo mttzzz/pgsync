@@ -66,10 +66,23 @@ func (d *SchemaDumper) Dump(ctx context.Context, source pgdb.Endpoint, section S
 	if err != nil {
 		return "", pgDumpError(section, source, connString, stderr, err)
 	}
-	if section == SchemaPreData && strings.TrimSpace(string(stdout)) == "" {
+	sql := stripPgDumpMetaCommands(string(stdout))
+	if section == SchemaPreData && strings.TrimSpace(sql) == "" {
 		return "", errors.New("pg_dump returned empty pre-data schema")
 	}
-	return string(stdout), nil
+	return sql, nil
+}
+
+func stripPgDumpMetaCommands(sql string) string {
+	lines := strings.SplitAfter(sql, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), `\`) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "")
 }
 
 func validateSchemaSection(section SchemaSection) error {

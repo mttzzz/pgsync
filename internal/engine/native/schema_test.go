@@ -37,6 +37,18 @@ func TestSchemaDumperDumpPreDataRunsPgDumpWithPlainSchemaOnly(t *testing.T) {
 	}, runner.calls[0])
 }
 
+func TestSchemaDumperStripsPgDumpMetaCommands(t *testing.T) {
+	t.Parallel()
+	runner := &fakeCommandRunner{stdout: []byte("\\restrict abc\nCREATE TABLE public.users(id integer);\n  \\unrestrict abc\n")}
+	dumper := &SchemaDumper{Runner: runner, Locator: &fakePgtoolsLocator{dumpPath: "pg_dump"}}
+
+	dump, err := dumper.Dump(context.Background(), schemaSourceEndpoint("secret"), SchemaPreData)
+
+	require.NoError(t, err)
+	assert.Equal(t, "CREATE TABLE public.users(id integer);\n", dump)
+	assert.Equal(t, "SELECT 1;\n", stripPgDumpMetaCommands("\\connect db\nSELECT 1;\n"))
+}
+
 func TestSchemaDumperDumpPostDataAllowsEmptyDump(t *testing.T) {
 	t.Parallel()
 	source := schemaSourceEndpoint("secret")
