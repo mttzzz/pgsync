@@ -6,7 +6,14 @@ import (
 	"github.com/mttzzz/pgsync/internal/config"
 	"github.com/mttzzz/pgsync/internal/engine"
 	"github.com/mttzzz/pgsync/internal/models"
+	"github.com/mttzzz/pgsync/internal/updater"
 )
+
+// UpdateService checks and installs pgsync releases.
+type UpdateService interface {
+	Check(ctx context.Context, currentVersion string) (updater.UpdateInfo, error)
+	Install(ctx context.Context, info updater.UpdateInfo) (updater.UpdateResult, error)
+}
 
 // ConfigStore is the CLI-facing config persistence port.
 type ConfigStore interface {

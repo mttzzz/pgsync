@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -14,11 +15,12 @@ import (
 
 func TestLatest(t *testing.T) {
 	t.Parallel()
-	doer := &fakeDoer{resp: &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3","html_url":"https://example"}`))}}
+	doer := &fakeDoer{resp: &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3","html_url":"https://example","assets":[{"name":"pgsync-darwin-arm64","browser_download_url":"https://download","size":42}]}`))}}
 	client := Client{RepoURL: "https://api.github.com/repos/o/r/", Doer: doer}
 	rel, err := client.Latest(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "v1.2.3", rel.Version)
+	assert.Equal(t, "https://download", rel.Assets[0].URL)
 	assert.Equal(t, "https://api.github.com/repos/o/r/releases/latest", doer.req.URL.String())
 }
 
@@ -38,9 +40,26 @@ func TestLatestErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestVersionAndDiscardHelpers(t *testing.T) {
+func TestCheckFindAssetVersionAndDiscardHelpers(t *testing.T) {
 	t.Parallel()
+	assetName := "pgsync-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		assetName += ".exe"
+	}
+	doer := &fakeDoer{resp: &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3","html_url":"https://example","assets":[{"name":"` + assetName + `","browser_download_url":"https://download","size":42}]}`))}}
+	info, err := (Client{RepoURL: "https://api.github.com/repos/o/r", Doer: doer}).Check(context.Background(), "dev")
+	require.NoError(t, err)
+	assert.True(t, info.Available)
+	assert.Equal(t, "https://download", info.DownloadURL)
+
+	asset, err := FindAsset([]Asset{{Name: "pgsync-windows-amd64.exe", URL: "u"}}, "windows", "amd64")
+	require.NoError(t, err)
+	assert.Equal(t, "u", asset.URL)
+	_, err = FindAsset(nil, "darwin", "arm64")
+	assert.Error(t, err)
+
 	assert.False(t, IsNewer("v1", "1"))
+	assert.True(t, IsNewer("dev", "v1"))
 	assert.True(t, IsNewer("v1", "v2"))
 	assert.NoError(t, DiscardBody(strings.NewReader("abc")))
 }

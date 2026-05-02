@@ -12,6 +12,7 @@ import (
 	"github.com/mttzzz/pgsync/internal/config"
 	"github.com/mttzzz/pgsync/internal/engine"
 	"github.com/mttzzz/pgsync/internal/engine/native"
+	"github.com/mttzzz/pgsync/internal/updater"
 	"github.com/mttzzz/pgsync/internal/version"
 )
 
@@ -25,6 +26,7 @@ var ErrConfirmationRequired = errors.New("confirmation required")
 type App struct {
 	EngineFactory func(*slog.Logger) (engine.Engine, error)
 	TUIRunner     TUIRunner
+	Updater       UpdateService
 	Out           io.Writer
 	Err           io.Writer
 	In            io.Reader
@@ -72,8 +74,8 @@ func NewRootCommand(app App) *cobra.Command {
 		newListCommand(app, flags),
 		newStatusCommand(app, flags),
 		newTextCommand(app, flags),
+		newUpdateCommand(app),
 	)
-	cmd.AddCommand(newUnimplementedCommand("upgrade"))
 	return cmd
 }
 
@@ -102,6 +104,10 @@ func normalizeApp(app App) App {
 		app.EngineFactory = func(logger *slog.Logger) (engine.Engine, error) {
 			return native.NewDefault(logger)
 		}
+	}
+	if app.Updater == nil {
+		client := updater.NewClient()
+		app.Updater = client
 	}
 	return app
 }
