@@ -1,20 +1,28 @@
-/*
- * Phase 1 entrypoint: prints version. Real CLI surface lands in Phase 2.
- */
+// Package main provides the pgsync entrypoint.
 package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
-	"github.com/mttzzz/pgsync/internal/version"
+	"github.com/mttzzz/pgsync/internal/cli"
+	"github.com/mttzzz/pgsync/internal/engine"
+	"github.com/mttzzz/pgsync/internal/engine/native"
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "version" {
-		fmt.Println(version.String())
-		return
+	baseLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	cmd := cli.NewRootCommand(cli.App{
+		EngineFactory: func(logger *slog.Logger) (engine.Engine, error) {
+			if logger == nil {
+				logger = baseLogger
+			}
+			return native.NewDefault(logger)
+		},
+	})
+	if err := cmd.Execute(); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(cli.ExitCode(err))
 	}
-	fmt.Println("pgsync — Phase 1 foundation. CLI commands ship in Phase 2.")
-	fmt.Println(version.String())
 }

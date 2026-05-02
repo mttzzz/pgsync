@@ -1,0 +1,244 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/mttzzz/pgsync/internal/config"
+	"github.com/mttzzz/pgsync/internal/engine"
+)
+
+func TestResolverMergesDefaultsFileEnvAndFlags(t *testing.T) {
+	t.Parallel()
+	useSystem := false
+	path := writeTestConfig(t, testConfig())
+	got, err := (Resolver{StorePath: path, Env: map[string]string{
+		"PGSYNC_REMOTE_HOST": "env-remote",
+		"PGSYNC_LOCAL_HOST":  "env-local",
+		"PGSYNC_THREADS":     "6",
+	}}).Resolve(context.Background(), FlagOverrides{
+		Threads:          9,
+		Engine:           "auto",
+		UseSystemPgtools: &useSystem,
+		Remote: config.Connection{
+			Host:     "flag-remote",
+			Port:     6543,
+			User:     "flag-user",
+			Password: "flag-token",
+			Database: "flagdb",
+			SSLMode:  "verify-full",
+			ProxyURL: "https://proxy.example.com:8443",
+		},
+		Local: config.Connection{
+			Host:     "flag-local",
+			Port:     7654,
+			User:     "flag-local-user",
+			Password: "flag-local-token",
+			Database: "flaglocaldb",
+			SSLMode:  "disable",
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "flag-remote", got.Remote.Host)
+	assert.Equal(t, 6543, got.Remote.Port)
+	assert.Equal(t, "flag-user", got.Remote.User)
+	assert.Equal(t, "flag-token", got.Remote.Password)
+	assert.Equal(t, "flagdb", got.Remote.Database)
+	assert.Equal(t, "verify-full", got.Remote.SSLMode)
+	assert.Equal(t, "https://proxy.example.com:8443", got.Remote.ProxyURL)
+	assert.Equal(t, "flag-local", got.Local.Host)
+	assert.Equal(t, 7654, got.Local.Port)
+	assert.Equal(t, "flag-local-user", got.Local.User)
+	assert.Equal(t, "flag-local-token", got.Local.Password)
+	assert.Equal(t, "flaglocaldb", got.Local.Database)
+	assert.Equal(t, "disable", got.Local.SSLMode)
+	assert.Equal(t, 9, got.Runtime.Threads)
+	assert.Equal(t, "auto", got.Runtime.Engine)
+	assert.False(t, got.Runtime.UseSystemPgtools)
+	assert.True(t, got.Runtime.ConcurrentIndexes)
+	assert.Equal(t, "fixture-db", got.Runtime.DefaultDatabase)
+	assert.Equal(t, "debug", got.Logging.Level)
+	assert.Equal(t, "json", got.Logging.Format)
+}
+
+func TestResolveUsesProcessEnvironment(t *testing.T) {
+	clearPGSyncEnv(t)
+	path := writeTestConfig(t, testConfig())
+	got, err := Resolve(context.Background(), FlagOverrides{ConfigPath: path})
+	require.NoError(t, err)
+	assert.Equal(t, "file-remote", got.Remote.Host)
+}
+
+func TestResolverUsesProcessEnvironmentWhenEnvIsNil(t *testing.T) {
+	clearPGSyncEnv(t)
+	path := writeTestConfig(t, testConfig())
+	got, err := (Resolver{StorePath: path}).Resolve(context.Background(), FlagOverrides{})
+	require.NoError(t, err)
+	assert.Equal(t, "file-local", got.Local.Host)
+}
+
+func TestResolverReturnsContextError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := (Resolver{}).Resolve(ctx, FlagOverrides{})
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestResolverSurfacesConfigLoadErrorWhenOverridesAreIncomplete(t *testing.T) {
+	t.Parallel()
+	missing := filepath.Join(t.TempDir(), "missing.toml")
+	_, err := (Resolver{StorePath: missing, Env: map[string]string{}}).Resolve(context.Background(), FlagOverrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "load config")
+}
+
+func TestResolverIgnoresConfigLoadErrorWhenEnvSuppliesHosts(t *testing.T) {
+	t.Parallel()
+	missing := filepath.Join(t.TempDir(), "missing.toml")
+	got, err := (Resolver{StorePath: missing, Env: map[string]string{
+		"PGSYNC_REMOTE_HOST": "env-remote",
+		"PGSYNC_LOCAL_HOST":  "env-local",
+	}}).Resolve(context.Background(), FlagOverrides{})
+	require.NoError(t, err)
+	assert.Equal(t, "env-remote", got.Remote.Host)
+	assert.Equal(t, "env-local", got.Local.Host)
+}
+
+func TestResolverIgnoresMalformedConfigWhenFlagsSupplyHosts(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "bad.toml")
+	require.NoError(t, os.WriteFile(path, []byte("not = [valid toml"), 0o600))
+	got, err := (Resolver{StorePath: path, Env: map[string]string{}}).Resolve(context.Background(), FlagOverrides{
+		Remote: config.Connection{Host: "flag-remote"},
+		Local:  config.Connection{Host: "flag-local"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "flag-remote", got.Remote.Host)
+}
+
+func TestResolverReturnsEnvParseError(t *testing.T) {
+	t.Parallel()
+	_, err := (Resolver{StorePath: writeTestConfig(t, testConfig()), Env: map[string]string{
+		"PGSYNC_THREADS": "bad",
+	}}).Resolve(context.Background(), FlagOverrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "apply env")
+}
+
+func TestResolverReturnsValidationError(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig()
+	cfg.Remote.Host = "bad host"
+	_, err := (Resolver{StorePath: writeTestConfig(t, cfg), Env: map[string]string{}}).Resolve(context.Background(), FlagOverrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "whitespace")
+}
+
+func TestResolverDefaultPathErrorIsLoadError(t *testing.T) {
+	t.Parallel()
+	_, err := (Resolver{Env: map[string]string{}}).Resolve(context.Background(), FlagOverrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "load config")
+}
+
+func TestPlanOptionsFromConfig(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig()
+	opts, err := PlanOptionsFromConfig(cfg, " ", SyncFlags{
+		Tables:  []string{"users", "orders", "users"},
+		DryRun:  true,
+		Yes:     true,
+		Analyze: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "fixture-db", opts.Database)
+	assert.Equal(t, []string{"users", "orders"}, opts.Tables)
+	assert.Equal(t, 4, opts.Threads)
+	assert.Equal(t, engine.ModeNative, opts.Mode)
+	assert.True(t, opts.DryRun)
+	assert.True(t, opts.Yes)
+	assert.True(t, opts.ConcurrentIndexes)
+	assert.True(t, opts.Analyze)
+}
+
+func TestPlanOptionsFromConfigValidationError(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig()
+	cfg.Remote.Host = ""
+	_, err := PlanOptionsFromConfig(cfg, "fixture-db", SyncFlags{})
+	assert.Error(t, err)
+}
+
+func TestEnvMap(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, map[string]string{"A": "1"}, envMap([]string{"A=1", "ignored"}))
+}
+
+func TestSanitizeErrorNil(t *testing.T) {
+	t.Parallel()
+	assert.NoError(t, sanitizeError(nil, testConfig()))
+}
+
+func writeTestConfig(t *testing.T, cfg config.Config) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, config.Save(path, cfg))
+	return path
+}
+
+func testConfig() config.Config {
+	cfg := config.Defaults()
+	cfg.Remote = config.Connection{
+		Host:     "file-remote",
+		Port:     5543,
+		User:     "file-user",
+		Password: "remote-pass",
+		Database: "fixture-db",
+		SSLMode:  "require",
+		ProxyURL: "socks5://proxy.example.com:1080",
+	}
+	cfg.Local = config.Connection{
+		Host:     "file-local",
+		Port:     15432,
+		User:     "file-local-user",
+		Password: "local-pass",
+		Database: "fixture-db",
+		SSLMode:  "disable",
+	}
+	cfg.Runtime.Threads = 4
+	cfg.Runtime.Engine = "native"
+	cfg.Runtime.UseSystemPgtools = true
+	cfg.Runtime.DefaultDatabase = "fixture-db"
+	cfg.Runtime.ConcurrentIndexes = true
+	cfg.Logging.Level = "debug"
+	cfg.Logging.Format = "json"
+	return cfg
+}
+
+func clearPGSyncEnv(t *testing.T) {
+	t.Helper()
+	keys := []string{
+		"PGSYNC_REMOTE_HOST", "PGSYNC_REMOTE_PORT", "PGSYNC_REMOTE_USER", "PGSYNC_REMOTE_PASSWORD",
+		"PGSYNC_REMOTE_DATABASE", "PGSYNC_REMOTE_SSL_MODE", "PGSYNC_REMOTE_PROXY_URL",
+		"PGSYNC_LOCAL_HOST", "PGSYNC_LOCAL_PORT", "PGSYNC_LOCAL_USER", "PGSYNC_LOCAL_PASSWORD",
+		"PGSYNC_LOCAL_SSL_MODE", "PGSYNC_THREADS", "PGSYNC_ENGINE", "PGSYNC_USE_SYSTEM_PGTOOLS",
+		"PGSYNC_DEFAULT_DATABASE", "PGSYNC_CONCURRENT_INDEXES", "PGSYNC_LOG_LEVEL", "PGSYNC_LOG_FORMAT",
+	}
+	for _, key := range keys {
+		t.Setenv(key, "")
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 0, ExitCode(nil))
+	assert.Equal(t, 2, ExitCode(ErrNotImplemented))
+	assert.Equal(t, 1, ExitCode(errors.New("ordinary")))
+}
