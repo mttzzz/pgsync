@@ -4,6 +4,15 @@ All notable changes to pgsync. Format: [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Added — Phase 2: Native engine + CLI sync
+- `internal/pgdb`: safe PostgreSQL DSN construction, identifier quoting, and pgx connection adapters.
+- `internal/engine`: stable sync engine contract, typed progress events, and observer fan-out.
+- `internal/pgschema`: pgx catalog service for databases, tables, FKs, and owned sequences.
+- `internal/engine/native`: repeatable-read snapshots, schema dump/apply, target reset, binary COPY pipeline, sequence repair, and stage orchestration.
+- `internal/cli`: Cobra root and `sync <db>` command with config/env/flag resolution, confirmation safety, dry-run, text output, and NDJSON progress output.
+- Testcontainers-based PostgreSQL integration harness and native sync/CLI integration tests.
+- CI and Makefile targets for Phase-2 unit, coverage, race, and integration checks.
+
 ### Added — Phase 1: Foundation
 - Go module skeleton, strict golangci-lint v2 profile, `make` targets.
 - GitHub Actions: lint, test (matrix: linux/macOS/win), coverage-gate (100%), integration.
