@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fails if any internal/ package has < 100% line coverage,
-# excluding paths in coverage.allow.
+# excluding fixed-string paths in coverage.allow.
 set -euo pipefail
 
 PROFILE="${1:-coverage.out}"
@@ -11,14 +11,19 @@ if [[ ! -f "$PROFILE" ]]; then
   exit 2
 fi
 
-# Build a grep -F pattern from allow-list (skip blank lines and #-comments).
-ALLOW_PATTERN="$(grep -vE '^(#|$)' "$ALLOW_FILE" | tr '\n' '|' | sed 's/|$//')"
+COVERAGE_LINES="$(go tool cover -func="$PROFILE" | grep -v '^total:')"
 
-# Extract per-function coverage, drop allowed paths, find any < 100.0%.
-FAILING="$(go tool cover -func="$PROFILE" \
-  | grep -vE "^(${ALLOW_PATTERN})" \
-  | grep -v '^total:' \
-  | awk '$NF != "100.0%" { print }')"
+if [[ -f "$ALLOW_FILE" ]]; then
+  while IFS= read -r pattern || [[ -n "$pattern" ]]; do
+    pattern="${pattern%$'\r'}"
+    if [[ -z "$pattern" || "$pattern" == \#* ]]; then
+      continue
+    fi
+    COVERAGE_LINES="$(printf '%s\n' "$COVERAGE_LINES" | grep -vF "$pattern" || true)"
+  done < "$ALLOW_FILE"
+fi
+
+FAILING="$(printf '%s\n' "$COVERAGE_LINES" | awk '$NF != "100.0%" { print }')"
 
 if [[ -n "$FAILING" ]]; then
   echo "Coverage gate FAILED — these symbols are below 100%:" >&2
