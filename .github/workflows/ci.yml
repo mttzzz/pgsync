@@ -91,6 +91,9 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-18
-          pg_dump --version
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/18/bin/pg_dump --version
       - name: Test integration
-        run: go test -race -tags=integration -timeout=15m ./test/integration/...
+        run: |
+          pg_dump --version
+          go test -race -tags=integration -timeout=15m ./test/integration/...

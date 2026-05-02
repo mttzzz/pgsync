@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 )
 
 // PayloadSource provides embedded files for a platform.
@@ -85,9 +86,14 @@ func writeEmbeddedFile(path string, data []byte) error {
 
 func payloadHash(files map[string][]byte) string {
 	h := sha256.New()
-	for name, data := range files {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
 		h.Write([]byte(name))
-		h.Write(data)
+		h.Write(files[name])
 	}
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }
