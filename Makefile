@@ -1,4 +1,4 @@
-.PHONY: help build test test-unit test-race test-integration test-coverage coverage-gate \
+.PHONY: help build test test-unit test-race test-integration test-all test-coverage coverage-gate \
         lint fmt deps deps-update bench clean
 
 BINARY := pgsync
@@ -13,7 +13,7 @@ build: ## Build the binary
 	@mkdir -p $(BUILD_DIR)
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/pgsync
 
-test: test-unit ## Alias for test-unit
+test: test-unit ## Run ordinary unit tests with coverage
 
 test-unit: ## Run unit tests with per-package coverage
 	go test -covermode=atomic -coverprofile=coverage.out ./internal/... ./pkg/...
@@ -21,8 +21,10 @@ test-unit: ## Run unit tests with per-package coverage
 test-race: ## Run unit tests with the race detector (requires cgo/toolchain)
 	go test -race ./...
 
-test-integration: ## Run integration tests (requires Docker)
-	go test -race -tags=integration -timeout=10m ./test/integration/...
+test-integration: ## Run integration tests (requires Docker, pg_dump, cgo/toolchain for -race)
+	go test -race -tags=integration -timeout=15m ./test/integration/...
+
+test-all: test-race coverage-gate test-integration ## Run all unit, coverage, and integration checks
 
 test-coverage: test-unit ## Generate HTML coverage report
 	go tool cover -html=coverage.out -o coverage.html
