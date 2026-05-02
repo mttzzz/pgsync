@@ -1,5 +1,5 @@
-.PHONY: help build test test-unit test-race test-integration test-all test-coverage coverage-gate \
-        lint fmt deps deps-update bench clean
+.PHONY: help build build-all test test-unit test-race test-integration test-all test-coverage coverage-gate \
+        lint fmt deps deps-update pgtools-fetch pgtools-verify pgtools-sync bench clean
 
 BINARY := pgsync
 BUILD_DIR := bin
@@ -12,6 +12,13 @@ help:
 build: ## Build the binary
 	@mkdir -p $(BUILD_DIR)
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/pgsync
+
+build-all: ## Build release binaries for common platforms
+	@mkdir -p dist
+	GOOS=linux GOARCH=amd64 go build -o dist/$(BINARY)-linux-amd64 ./cmd/pgsync
+	GOOS=darwin GOARCH=amd64 go build -o dist/$(BINARY)-darwin-amd64 ./cmd/pgsync
+	GOOS=darwin GOARCH=arm64 go build -o dist/$(BINARY)-darwin-arm64 ./cmd/pgsync
+	GOOS=windows GOARCH=amd64 go build -o dist/$(BINARY)-windows-amd64.exe ./cmd/pgsync
 
 test: test-unit ## Run ordinary unit tests with coverage
 
@@ -47,8 +54,17 @@ deps-update: ## Update deps
 	go get -u ./...
 	go mod tidy
 
-bench: ## Run benchmarks (requires Docker)
-	go test -tags=integration -bench=. -benchmem -run=^$$ ./benchmarks/...
+pgtools-fetch: ## Fetch pgtools payloads into embed/bin
+	bash scripts/fetch-pgtools.sh --all
+
+pgtools-verify: ## Verify pgtools payloads
+	bash scripts/verify-pgtools.sh embed/bin
+
+pgtools-sync: ## Mirror pgtools payloads into package embed tree
+	bash scripts/sync-pgtools-embed.sh
+
+bench: ## Run benchmarks
+	go test -bench=. -benchmem -run=^$$ ./benchmarks/...
 
 clean:
 	rm -rf $(BUILD_DIR) coverage.out coverage.html

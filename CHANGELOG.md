@@ -4,6 +4,14 @@ All notable changes to pgsync. Format: [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Added — Phase 4: Embedded pg_tools, benchmarks, release pipeline, updater
+- `internal/engine/pgtools`: PostgreSQL tools manifest parser and embedded payload extraction/cache locator.
+- `embed/pgtools-manifest.toml`: PostgreSQL 18 platform manifest scaffold.
+- `scripts/fetch-pgtools.sh`, `verify-pgtools.sh`, `sync-pgtools-embed.sh`: release-time pgtools staging helpers.
+- `internal/updater`: GitHub Releases update-check client.
+- Benchmark scaffold and release GitHub Actions workflow with checksums.
+- `Makefile` release/pgtools targets and Windows `build.ps1` helper.
+
 ### Added — Phase 3: TUI + ConfigEditor + agent output hardening
 - `internal/tui`: Bubble Tea app shell, state machine, key routing, queue model, screen contracts, responsive layout helpers, and style theme.
 - `internal/tui/screens`: main menu, database list, table selection, plan confirmation, progress/result summaries, and ConfigEditor field metadata with Russian labels/help.

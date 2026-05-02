@@ -1,0 +1,29 @@
+schema_version = 1
+tool_version = "18.x"
+
+# URLs and SHA-256 values are placeholders that must be refreshed intentionally
+# when the PostgreSQL 18 patch version changes.
+
+[platforms.windows-amd64]
+url = "https://example.invalid/postgresql-18-windows-amd64.zip"
+archive_sha256 = "replace-with-real-sha256"
+files = ["pg_dump.exe", "pg_restore.exe"]
+expected_binaries = ["pg_dump.exe", "pg_restore.exe"]
+
+[platforms.darwin-arm64]
+url = "https://example.invalid/postgresql-18-darwin-arm64.tar.gz"
+archive_sha256 = "replace-with-real-sha256"
+files = ["pg_dump", "pg_restore"]
+expected_binaries = ["pg_dump", "pg_restore"]
+
+[platforms.darwin-amd64]
+url = "https://example.invalid/postgresql-18-darwin-amd64.tar.gz"
+archive_sha256 = "replace-with-real-sha256"
+files = ["pg_dump", "pg_restore"]
+expected_binaries = ["pg_dump", "pg_restore"]
+
+[platforms.linux-amd64]
+url = "https://example.invalid/postgresql-18-linux-amd64.tar.gz"
+archive_sha256 = "replace-with-real-sha256"
+files = ["pg_dump", "pg_restore"]
+expected_binaries = ["pg_dump", "pg_restore"]
