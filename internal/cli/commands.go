@@ -63,10 +63,17 @@ func NewRootCommand(app App) *cobra.Command {
 	cmd.SetErr(app.Err)
 	cmd.SetIn(app.In)
 	addGlobalFlags(cmd, flags)
-	cmd.AddCommand(newVersionCommand(app), newSyncCommand(app, flags), newConfigCommand(app, flags), newTUICommand(app))
-	for _, name := range []string{"doctor", "list", "status", "text", "upgrade"} {
-		cmd.AddCommand(newUnimplementedCommand(name))
-	}
+	cmd.AddCommand(
+		newVersionCommand(app),
+		newSyncCommand(app, flags),
+		newConfigCommand(app, flags),
+		newTUICommand(app),
+		newDoctorCommand(app, flags),
+		newListCommand(app, flags),
+		newStatusCommand(app, flags),
+		newTextCommand(app),
+	)
+	cmd.AddCommand(newUnimplementedCommand("upgrade"))
 	return cmd
 }
 

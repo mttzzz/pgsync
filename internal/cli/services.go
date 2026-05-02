@@ -27,6 +27,12 @@ type TUIRunner interface {
 	Run(ctx context.Context, mode TUIMode) error
 }
 
+// TUIRunnerFunc adapts a function to TUIRunner.
+type TUIRunnerFunc func(ctx context.Context, mode TUIMode) error
+
+// Run calls f.
+func (f TUIRunnerFunc) Run(ctx context.Context, mode TUIMode) error { return f(ctx, mode) }
+
 // TUIMode selects which interactive flow to launch.
 type TUIMode string
 

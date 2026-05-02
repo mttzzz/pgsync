@@ -29,7 +29,7 @@ func TestVersionCommand(t *testing.T) {
 
 func TestUnimplementedCommand(t *testing.T) {
 	t.Parallel()
-	_, _, err := executeRoot(t, appWithEngine(&fakeEngine{}), "doctor")
+	_, _, err := executeRoot(t, appWithEngine(&fakeEngine{}), "upgrade")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNotImplemented)
 	assert.Equal(t, 2, ExitCode(err))
