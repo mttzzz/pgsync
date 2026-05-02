@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mttzzz/pgsync/internal/clock"
 	"github.com/mttzzz/pgsync/internal/config"
 	"github.com/mttzzz/pgsync/internal/engine"
-	"github.com/mttzzz/pgsync/internal/models"
 	"github.com/mttzzz/pgsync/internal/observability"
 )
 
@@ -51,8 +51,9 @@ func runSync(ctx context.Context, app App, overrides FlagOverrides, syncFlags Sy
 	if err != nil {
 		return sanitizeError(err, cfg)
 	}
+	plainOpts := plainOptions(overrides)
 	if syncFlags.DryRun {
-		return printPlan(app.Out, plan)
+		return PrintPlan(app.Out, plan, plainOpts)
 	}
 	if !syncFlags.Yes {
 		return fmt.Errorf("%w: rerun with --yes to execute sync", ErrConfirmationRequired)
@@ -61,7 +62,10 @@ func runSync(ctx context.Context, app App, overrides FlagOverrides, syncFlags Sy
 	if err != nil {
 		return sanitizeError(err, cfg)
 	}
-	return printResult(app.Out, result)
+	if overrides.Output == "json" {
+		return nil
+	}
+	return PrintResult(app.Out, result, plainOpts)
 }
 
 func syncLogger(cfg config.Config, overrides FlagOverrides, out io.Writer) *slog.Logger {
@@ -76,37 +80,15 @@ func syncLogger(cfg config.Config, overrides FlagOverrides, out io.Writer) *slog
 	return logger
 }
 
-type syncObserver struct {
-	out    io.Writer
-	format string
-	quiet  bool
-}
-
 func newSyncObserver(out io.Writer, overrides FlagOverrides) engine.ProgressObserver {
-	return &syncObserver{out: out, format: overrides.Output, quiet: overrides.Quiet}
-}
-
-func (o *syncObserver) OnEvent(_ context.Context, event engine.Event) {
-	if o.quiet || o.out == nil {
-		return
+	if overrides.Output == "json" {
+		return NewNDJSONObserver(out, clock.NewSystem())
 	}
-	if o.format == "json" {
-		_, _ = fmt.Fprintf(o.out, "{\"event\":%q}\n", event.Name)
-		return
-	}
-	_, _ = fmt.Fprintf(o.out, "%s\n", event.Name)
+	return NewPlainObserver(out, plainOptions(overrides))
 }
 
-func printPlan(out io.Writer, plan *models.SyncPlan) error {
-	_, err := fmt.Fprintf(out, "plan database=%s engine=%s tables=%d dry_run=%t\n",
-		plan.Database, plan.Engine, len(plan.Tables), plan.DryRun)
-	return err
-}
-
-func printResult(out io.Writer, result *models.SyncResult) error {
-	_, err := fmt.Fprintf(out, "synced database=%s tables=%d rows=%d bytes=%d\n",
-		result.Database, result.TablesCopied, result.RowsCopied, result.BytesCopied)
-	return err
+func plainOptions(overrides FlagOverrides) PlainOptions {
+	return PlainOptions{Quiet: overrides.Quiet, NoColor: overrides.NoColor, Color: !overrides.NoColor}
 }
 
 func sanitizeError(err error, cfg config.Config) error {

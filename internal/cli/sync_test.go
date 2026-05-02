@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,7 +47,19 @@ func (f *fakeEngine) Plan(_ context.Context, opts engine.PlanOptions) (*models.S
 func (f *fakeEngine) Execute(ctx context.Context, plan *models.SyncPlan, observer engine.ProgressObserver) (*models.SyncResult, error) {
 	f.executeCalls++
 	if observer != nil {
-		observer.OnEvent(ctx, engine.Event{Name: engine.EventSyncStart})
+		observer.OnEvent(ctx, engine.Event{
+			Name:     engine.EventSyncStart,
+			Database: plan.Database,
+			Tables:   len(plan.Tables),
+			Engine:   plan.Engine,
+		})
+		observer.OnEvent(ctx, engine.Event{
+			Name:        engine.EventTableCopyProgress,
+			Table:       "public.users",
+			Rows:        7,
+			Percent:     50,
+			BytesPerSec: 90,
+		})
 	}
 	if f.executeErr != nil {
 		return nil, f.executeErr
@@ -65,8 +78,10 @@ func TestSyncYesPlansAndExecutes(t *testing.T) {
 	assert.Equal(t, 1, fake.planCalls)
 	assert.Equal(t, 1, fake.executeCalls)
 	assert.Equal(t, "mydb", fake.lastOptions.Database)
-	assert.Contains(t, out, engine.EventSyncStart)
-	assert.Contains(t, out, "synced database=mydb")
+	assert.Contains(t, out, "starting sync")
+	assert.Contains(t, out, "table public.users rows=7 pct=50.0% bytes_per_sec=90")
+	assert.Contains(t, out, "synced")
+	assert.Contains(t, out, "database=mydb")
 }
 
 func TestSyncDryRunPrintsPlanWithoutConfirmation(t *testing.T) {
@@ -76,7 +91,7 @@ func TestSyncDryRunPrintsPlanWithoutConfirmation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, fake.planCalls)
 	assert.Zero(t, fake.executeCalls)
-	assert.Contains(t, out, "plan database=mydb")
+	assert.Contains(t, out, "database=mydb")
 	assert.NotContains(t, out, "remote-pass")
 	assert.NotContains(t, out, "local-pass")
 }
@@ -120,14 +135,22 @@ func TestSyncTablesAndGlobalFlagsOverrideConfig(t *testing.T) {
 func TestSyncJSONObserver(t *testing.T) {
 	t.Parallel()
 	fake := &fakeEngine{}
-	out, _, err := executeRoot(t, appWithEngine(fake),
+	out, errOut, err := executeRoot(t, appWithEngine(fake),
 		"--config", writeTestConfig(t, testConfig()),
 		"--output", "json",
 		"sync", "mydb",
 		"--yes",
 	)
 	require.NoError(t, err)
-	assert.Contains(t, out, "{\"event\":\"sync.start\"}")
+	assert.Empty(t, errOut)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	require.Len(t, lines, 2)
+	start := decodeNDJSONLine(t, lines[0])
+	assert.Equal(t, engine.EventSyncStart, start["event"])
+	assert.Equal(t, "mydb", start["db"])
+	progress := decodeNDJSONLine(t, lines[1])
+	assert.Equal(t, engine.EventTableCopyProgress, progress["event"])
+	assert.NotContains(t, out, "synced database")
 }
 
 func TestSyncQuietSuppressesObserver(t *testing.T) {
@@ -140,8 +163,10 @@ func TestSyncQuietSuppressesObserver(t *testing.T) {
 		"--yes",
 	)
 	require.NoError(t, err)
-	assert.NotContains(t, out, engine.EventSyncStart)
-	assert.Contains(t, out, "synced database=mydb")
+	assert.NotContains(t, out, "starting sync")
+	assert.NotContains(t, out, "table public.users")
+	assert.Contains(t, out, "synced")
+	assert.Contains(t, out, "database=mydb")
 }
 
 func TestSyncReturnsResolveError(t *testing.T) {
