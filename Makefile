@@ -1,0 +1,53 @@
+.PHONY: help build test test-unit test-race test-integration test-coverage coverage-gate \
+        lint fmt deps deps-update bench clean
+
+BINARY := pgsync
+BUILD_DIR := bin
+GO_FILES := $(shell find . -name '*.go' -not -path './vendor/*' -not -path './embed/*')
+
+help:
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
+
+build: ## Build the binary
+	@mkdir -p $(BUILD_DIR)
+	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/pgsync
+
+test: test-unit ## Alias for test-unit
+
+test-unit: ## Run unit tests with per-package coverage
+	go test -covermode=atomic -coverprofile=coverage.out ./internal/... ./pkg/...
+
+test-race: ## Run unit tests with the race detector (requires cgo/toolchain)
+	go test -race ./...
+
+test-integration: ## Run integration tests (requires Docker)
+	go test -race -tags=integration -timeout=10m ./test/integration/...
+
+test-coverage: test-unit ## Generate HTML coverage report
+	go tool cover -html=coverage.out -o coverage.html
+
+coverage-gate: test-unit ## Fail if internal/ coverage < 100%
+	bash scripts/coverage-gate.sh coverage.out coverage.allow
+
+lint: ## Run golangci-lint with auto-fix
+	golangci-lint run --fix ./...
+
+fmt: ## Format code
+	go fmt ./...
+	gofmt -s -w $(GO_FILES)
+
+deps: ## Download deps
+	go mod download
+	go mod verify
+
+deps-update: ## Update deps
+	go get -u ./...
+	go mod tidy
+
+bench: ## Run benchmarks (requires Docker)
+	go test -tags=integration -bench=. -benchmem -run=^$$ ./benchmarks/...
+
+clean:
+	rm -rf $(BUILD_DIR) coverage.out coverage.html
+	go clean

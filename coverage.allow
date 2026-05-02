@@ -1,0 +1,5 @@
+# One pattern per line. Paths matched by `grep -F`.
+# Per spec §11.1: only entry point, build-time-injected version, and OS-specific embed files.
+github.com/mttzzz/pgsync/cmd/pgsync
+github.com/mttzzz/pgsync/internal/version
+github.com/mttzzz/pgsync/internal/engine/pgtools/embed_

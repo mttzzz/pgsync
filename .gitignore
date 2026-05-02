@@ -1,0 +1,38 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.test
+*.out
+
+# Go
+vendor/
+go.work.sum
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+.env
+.env.local
+~/.pgsync/
+benchmarks/results/main/
+benchmarks/results/local/
+fixtures/*.sql
+fixtures/*.sql.gz
+fixtures/dvdrental/
+coverage.out
+coverage.html
+
+# Embedded pg_tools (downloaded by scripts/fetch-pgtools.sh, not committed)
+embed/bin/*/
+
+# Plans/specs are committed
+!docs/superpowers/specs/
+!docs/superpowers/plans/

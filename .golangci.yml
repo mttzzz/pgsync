@@ -1,0 +1,64 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  go: "1.25"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - gocritic
+    - gocognit
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - nilerr
+    - prealloc
+    - revive
+    - staticcheck
+    - unparam
+    - unused
+    - wastedassign
+
+  settings:
+    gocognit:
+      min-complexity: 15
+    gocyclo:
+      min-complexity: 10
+    gosec:
+      excludes:
+        - G104  # errors checked via errcheck
+    revive:
+      rules:
+        - name: var-naming
+        - name: exported
+        - name: error-return
+        - name: error-naming
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: errorf
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: indent-error-flow
+        - name: superfluous-else
+        - name: unreachable-code
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/mttzzz/pgsync
