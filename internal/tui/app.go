@@ -26,7 +26,16 @@ type App struct {
 
 // NewApp creates the default TUI app model.
 func NewApp(cfg config.Config) App {
-	return App{state: State{Current: screens.SettingsCheckID, Config: cfg}}
+	app := App{state: State{Current: screens.SettingsCheckID, Config: cfg}}
+	if err := config.Validate(cfg); err != nil {
+		app.state.Current = screens.ConfigEditorID
+		app.state.Err = err
+		app.state.Status = "Нужно настроить подключение перед первым запуском"
+		return app
+	}
+	app.state.Current = screens.MainMenuID
+	app.state.Status = "Настройки загружены"
+	return app
 }
 
 // Init returns no startup command; callers can inject settings messages in tests.
@@ -54,14 +63,35 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the current app shell.
 func (a App) View() string {
-	body := fmt.Sprintf("Экран: %s", a.state.Current)
+	body := a.screenBody()
 	if a.state.Status != "" {
-		body += "\n" + a.state.Status
+		body += "\n\n" + a.state.Status
 	}
 	if a.state.Err != nil {
 		body += "\nОшибка: " + a.state.Err.Error()
 	}
 	return body
+}
+
+func (a App) screenBody() string {
+	switch a.state.Current {
+	case screens.ConfigEditorID:
+		return screens.NewConfigEditor(a.state.Config, screens.WizardMode, nil).View() + "\n\nПодсказка: заполните конфиг через `pgsync config` или TOML-файл."
+	case screens.MainMenuID:
+		return screens.MainMenu().View()
+	case screens.DatabaseListID:
+		return screens.DatabaseList(nil, nil).View()
+	case screens.TablesPickID:
+		return screens.TablesPick(nil).View()
+	case screens.ConfirmPlanID:
+		return screens.ConfirmPlan(nil).View()
+	case screens.ProgressID:
+		return screens.Progress("ожидание", 0).View()
+	case screens.ResultID:
+		return screens.Result(nil).View()
+	default:
+		return fmt.Sprintf("Экран: %s", a.state.Current)
+	}
 }
 
 // State returns a copy of current state for tests and screen adapters.

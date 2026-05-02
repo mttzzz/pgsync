@@ -17,7 +17,7 @@ import (
 func TestAppSettingsTransitions(t *testing.T) {
 	t.Parallel()
 	cfg := validCfg()
-	app := NewApp(config.Defaults())
+	app := App{state: State{Current: screens.SettingsCheckID, Config: config.Defaults()}}
 	assert.Nil(t, app.Init())
 	assert.Equal(t, screens.SettingsCheckID, app.State().Current)
 
@@ -40,16 +40,25 @@ func TestAppSettingsTransitions(t *testing.T) {
 	assert.Contains(t, app.View(), "Конфиг неполный")
 }
 
+func TestNewAppInitialRouting(t *testing.T) {
+	t.Parallel()
+	invalid := NewApp(config.Defaults())
+	assert.Equal(t, screens.ConfigEditorID, invalid.State().Current)
+	assert.Contains(t, invalid.View(), "Подсказка")
+
+	valid := NewApp(validCfg())
+	assert.Equal(t, screens.MainMenuID, valid.State().Current)
+	assert.Contains(t, valid.View(), "Sync database")
+}
+
 func TestAppKeysAndMessages(t *testing.T) {
 	t.Parallel()
 	app := NewApp(validCfg())
 
 	model, _ := app.Update(key("enter"))
 	app = model.(App)
-	assert.Equal(t, screens.MainMenuID, app.State().Current)
-	model, _ = app.Update(key("enter"))
-	app = model.(App)
 	assert.Equal(t, screens.DatabaseListID, app.State().Current)
+	assert.Contains(t, app.View(), "Базы")
 	model, _ = app.Update(key("s"))
 	app = model.(App)
 	assert.Equal(t, screens.ConfigEditorID, app.State().Current)
@@ -92,6 +101,24 @@ func TestGlobalKeyAction(t *testing.T) {
 	assert.Equal(t, KeyConfirm, GlobalKeyAction(key("enter")))
 	assert.Equal(t, KeyTogglePause, GlobalKeyAction(key(" ")))
 	assert.Equal(t, KeyNone, GlobalKeyAction(key("x")))
+}
+
+func TestScreenBody(t *testing.T) {
+	t.Parallel()
+	app := NewApp(validCfg())
+	for _, id := range []screens.ID{
+		screens.ConfigEditorID,
+		screens.MainMenuID,
+		screens.DatabaseListID,
+		screens.TablesPickID,
+		screens.ConfirmPlanID,
+		screens.ProgressID,
+		screens.ResultID,
+		screens.SettingsCheckID,
+	} {
+		app.state.Current = id
+		assert.NotEmpty(t, app.screenBody())
+	}
 }
 
 func TestNextScreen(t *testing.T) {
