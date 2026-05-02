@@ -24,6 +24,7 @@ var ErrConfirmationRequired = errors.New("confirmation required")
 // App contains injectable CLI dependencies.
 type App struct {
 	EngineFactory func(*slog.Logger) (engine.Engine, error)
+	TUIRunner     TUIRunner
 	Out           io.Writer
 	Err           io.Writer
 	In            io.Reader
@@ -52,6 +53,9 @@ func NewRootCommand(app App) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if app.TUIRunner != nil {
+				return runTUI(cmd.Context(), app, TUIModeApp)
+			}
 			return cmd.Help()
 		},
 	}
@@ -59,8 +63,8 @@ func NewRootCommand(app App) *cobra.Command {
 	cmd.SetErr(app.Err)
 	cmd.SetIn(app.In)
 	addGlobalFlags(cmd, flags)
-	cmd.AddCommand(newVersionCommand(app), newSyncCommand(app, flags))
-	for _, name := range []string{"config", "doctor", "list", "status", "tui", "text", "upgrade"} {
+	cmd.AddCommand(newVersionCommand(app), newSyncCommand(app, flags), newConfigCommand(app, flags), newTUICommand(app))
+	for _, name := range []string{"doctor", "list", "status", "text", "upgrade"} {
 		cmd.AddCommand(newUnimplementedCommand(name))
 	}
 	return cmd
