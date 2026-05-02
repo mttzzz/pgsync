@@ -1,14 +1,21 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/mttzzz/pgsync/internal/config"
+)
 
 /* SyncPlan is the immutable plan consumed by a sync engine. */
 type SyncPlan struct {
-	Database string
-	Tables   []Table
-	DryRun   bool
-	Threads  int
-	Engine   string
+	Database  string
+	Tables    []Table
+	Sequences []Sequence
+	DryRun    bool
+	Threads   int
+	Engine    string
+	Remote    config.Connection
+	Local     config.Connection
 }
 
 /* IsEmpty reports whether the plan has no selected database. */
