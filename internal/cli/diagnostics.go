@@ -25,9 +25,9 @@ func newStatusCommand(app App, globals *globalFlags) *cobra.Command {
 	}}
 }
 
-func newTextCommand(app App) *cobra.Command {
+func newTextCommand(app App, globals *globalFlags) *cobra.Command {
 	return &cobra.Command{Use: "text", Short: "Run text-mode interactive flow", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		return runTUI(cmd.Context(), app, TUIModeConfigEdit)
+		return runTUI(cmd.Context(), app, TUIModeConfigEdit, globals.ConfigPath)
 	}}
 }
 

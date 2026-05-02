@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -24,8 +25,8 @@ func TestAppSettingsTransitions(t *testing.T) {
 	model, cmd := app.Update(SettingsLoadedMsg{Config: cfg})
 	require.Nil(t, cmd)
 	app = model.(App)
-	assert.Equal(t, screens.MainMenuID, app.State().Current)
-	assert.Contains(t, app.View(), "Настройки загружены")
+	assert.Equal(t, screens.DatabaseListID, app.State().Current)
+	assert.Contains(t, app.View(), "Загружаю")
 
 	model, _ = app.Update(SettingsLoadedMsg{Err: errors.New("missing")})
 	app = model.(App)
@@ -47,18 +48,25 @@ func TestNewAppInitialRouting(t *testing.T) {
 	assert.Contains(t, invalid.View(), "Подсказка")
 
 	valid := NewApp(validCfg())
-	assert.Equal(t, screens.MainMenuID, valid.State().Current)
-	assert.Contains(t, valid.View(), "Sync database")
+	assert.Equal(t, screens.DatabaseListID, valid.State().Current)
+	assert.Contains(t, valid.View(), "Database Queue Builder")
 }
 
 func TestAppKeysAndMessages(t *testing.T) {
 	t.Parallel()
 	app := NewApp(validCfg())
-
-	model, _ := app.Update(key("enter"))
+	model, _ := app.Update(DatabasesLoadedMsg{Databases: []models.Database{{Name: "alpha"}, {Name: "beta"}}})
 	app = model.(App)
-	assert.Equal(t, screens.DatabaseListID, app.State().Current)
-	assert.Contains(t, app.View(), "Базы")
+	assert.Contains(t, app.View(), "alpha")
+
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	app = model.(App)
+	assert.Equal(t, 1, app.State().DatabaseIndex)
+	model, _ = app.Update(key("enter"))
+	app = model.(App)
+	assert.Equal(t, screens.TablesPickID, app.State().Current)
+	assert.Equal(t, "beta", app.State().Config.Runtime.DefaultDatabase)
+
 	model, _ = app.Update(key("s"))
 	app = model.(App)
 	assert.Equal(t, screens.ConfigEditorID, app.State().Current)
@@ -86,7 +94,7 @@ func TestAppKeysAndMessages(t *testing.T) {
 	model, _ = app.Update(SyncFinishedMsg{Result: res})
 	app = model.(App)
 	assert.Equal(t, screens.ResultID, app.State().Current)
-	assert.Contains(t, app.View(), "Готово")
+	assert.Contains(t, app.View(), "Sync Report")
 
 	model, _ = app.Update(struct{}{})
 	assert.IsType(t, App{}, model)
@@ -119,6 +127,23 @@ func TestScreenBody(t *testing.T) {
 		app.state.Current = id
 		assert.NotEmpty(t, app.screenBody())
 	}
+}
+
+func TestAppLoadsDatabasesThroughCatalogService(t *testing.T) {
+	t.Parallel()
+	catalog := &fakeCatalogService{databases: []models.Database{{Name: "app", SizeBytes: 1024, Owner: "postgres"}}}
+	app := NewAppWithServices(validCfg(), Services{Catalog: catalog})
+	cmd := app.Init()
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	model, updateCmd := app.Update(msg)
+	require.Nil(t, updateCmd)
+	app = model.(App)
+	assert.True(t, catalog.listedDatabases)
+	assert.Contains(t, app.View(), "app")
+	assert.Contains(t, app.View(), "Database Queue Builder")
+	assert.Contains(t, app.State().Status, "Loaded")
 }
 
 func TestNextScreen(t *testing.T) {
@@ -156,6 +181,20 @@ func TestQueue(t *testing.T) {
 
 func key(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+type fakeCatalogService struct {
+	databases       []models.Database
+	listedDatabases bool
+}
+
+func (f *fakeCatalogService) ListDatabases(ctx context.Context) ([]models.Database, error) {
+	f.listedDatabases = true
+	return f.databases, nil
+}
+
+func (f *fakeCatalogService) ListTables(ctx context.Context, database string) ([]models.Table, error) {
+	return nil, nil
 }
 
 func validCfg() config.Config {

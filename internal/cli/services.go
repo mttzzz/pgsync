@@ -27,6 +27,11 @@ type TUIRunner interface {
 	Run(ctx context.Context, mode TUIMode) error
 }
 
+// TUIRunnerWithConfig launches interactive UI flows with command-line config path awareness.
+type TUIRunnerWithConfig interface {
+	RunWithConfig(ctx context.Context, mode TUIMode, configPath string) error
+}
+
 // TUIRunnerFunc adapts a function to TUIRunner.
 type TUIRunnerFunc func(ctx context.Context, mode TUIMode) error
 

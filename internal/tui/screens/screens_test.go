@@ -25,15 +25,16 @@ func TestStaticAndBasicScreens(t *testing.T) {
 	assert.NotEmpty(t, s.Title())
 	assert.NotEmpty(t, s.Help())
 
-	assert.Contains(t, DatabaseList(nil, nil).View(), "не найдены")
+	assert.Contains(t, DatabaseList(nil, nil).View(), "Loading")
 	assert.Contains(t, DatabaseList(nil, errors.New("boom")).View(), "boom")
-	assert.Contains(t, DatabaseList([]models.Database{{Name: "db", SizeBytes: 1024}}, nil).View(), "1.0 KB")
-	assert.Contains(t, TablesPick(nil).View(), "Пусто")
+	assert.Contains(t, DatabaseList([]models.Database{{Name: "db", SizeBytes: 1024, TableCount: 3}}, nil).View(), "1.0 KB")
+	assert.Contains(t, DatabaseList([]models.Database{{Name: "db", SizeBytes: 1024, TableCount: 3}}, nil).View(), "▸")
+	assert.Contains(t, TablesPick(nil).View(), "No user tables")
 	assert.Contains(t, TablesPick([]models.Table{{Schema: "public", Name: "users", Rows: 2, SizeBytes: 2048}}).View(), `"public"."users"`)
-	assert.Contains(t, ConfirmPlan(nil).View(), "не построен")
+	assert.Contains(t, ConfirmPlan(nil).View(), "No sync targets")
 	assert.Contains(t, ConfirmPlan(&models.SyncPlan{Database: "db", Tables: []models.Table{{Name: "x"}}, Engine: "native"}).View(), "native")
 	assert.Contains(t, Progress("copy", 42).View(), "42.0%")
-	assert.Contains(t, Result(nil).View(), "Нет")
+	assert.Contains(t, Result(nil).View(), "No sync result")
 	assert.Contains(t, Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0), RowsCopied: 3, TablesCopied: 1, BytesCopied: 1024, Err: errors.New("bad")}).View(), "bad")
 }
 

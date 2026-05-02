@@ -28,7 +28,7 @@ func newConfigCommand(app App, globals *globalFlags) *cobra.Command {
 		Use:   "config",
 		Short: "Manage pgsync configuration",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runTUI(cmd.Context(), app, TUIModeConfigEdit)
+			return runTUI(cmd.Context(), app, TUIModeConfigEdit, globals.ConfigPath)
 		},
 	}
 	cmd.AddCommand(newConfigPathCommand(app, globals, store), newConfigShowCommand(app, globals, store), newConfigResetCommand(app, globals, store))
@@ -66,7 +66,7 @@ func newConfigResetCommand(app App, globals *globalFlags, store ConfigStore) *co
 		if err == nil {
 			_ = store.Remove(path)
 		}
-		return runTUI(cmd.Context(), app, TUIModeConfigReset)
+		return runTUI(cmd.Context(), app, TUIModeConfigReset, globals.ConfigPath)
 	}}
 }
 
@@ -84,9 +84,12 @@ func writeRedactedConfig(w io.Writer, output string, cfg config.Config) error {
 	return toml.NewEncoder(w).Encode(cfg)
 }
 
-func runTUI(ctx context.Context, app App, mode TUIMode) error {
+func runTUI(ctx context.Context, app App, mode TUIMode, configPath string) error {
 	if app.TUIRunner == nil {
 		return fmt.Errorf("tui: %w", ErrNotImplemented)
+	}
+	if runner, ok := app.TUIRunner.(TUIRunnerWithConfig); ok {
+		return runner.RunWithConfig(ctx, mode, configPath)
 	}
 	return app.TUIRunner.Run(ctx, mode)
 }

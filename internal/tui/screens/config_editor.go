@@ -3,6 +3,7 @@ package screens
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -117,5 +118,86 @@ func (e ConfigEditor) Save(ctx context.Context) ConfigEditor {
 
 // BuildConfigForm constructs a huh form for production wiring.
 func BuildConfigForm(cfg config.Config, mode ConfigEditorMode) *huh.Form {
-	return huh.NewForm(huh.NewGroup(huh.NewNote().Title("Настройки").Description(string(mode) + ": " + cfg.Remote.Host)))
+	return BuildEditableConfigForm(&cfg, mode)
+}
+
+// BuildEditableConfigForm constructs an interactive form bound to cfg.
+func BuildEditableConfigForm(cfg *config.Config, mode ConfigEditorMode) *huh.Form {
+	if cfg == nil {
+		defaults := config.Defaults()
+		cfg = &defaults
+	}
+	if mode == ResetMode {
+		*cfg = config.Defaults()
+	}
+
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewNote().
+				Title(configFormTitle(mode)).
+				Description("Заполните подключения к удалённому и локальному PostgreSQL. Пароли сохраняются только в локальный TOML-конфиг с правами 0600.").
+				Next(true).
+				NextLabel("Начать"),
+		),
+		huh.NewGroup(
+			huh.NewInput().Title("Хост prod").Description("Адрес удалённого PostgreSQL").Value(&cfg.Remote.Host).Validate(config.ValidateHost),
+			huh.NewInput().Title("Порт prod").Description("Порт удалённого PostgreSQL").Accessor(intStringAccessor{value: &cfg.Remote.Port}).Validate(validatePortString),
+			huh.NewInput().Title("Пользователь prod").Description("Пользователь для чтения").Value(&cfg.Remote.User).Validate(requiredString),
+			huh.NewInput().Title("Пароль prod").Description("Пароль удалённой БД").Value(&cfg.Remote.Password).Password(true),
+			huh.NewInput().Title("База по умолчанию").Description("Необязательно: база для синхронизации по умолчанию").Value(&cfg.Remote.Database),
+			huh.NewSelect[string]().Title("SSL mode prod").Description("libpq sslmode").Options(huh.NewOptions("disable", "require", "verify-ca", "verify-full")...).Value(&cfg.Remote.SSLMode).Validate(config.ValidateSSLMode),
+			huh.NewInput().Title("Прокси").Description("Необязательно: SOCKS5/HTTP proxy URL").Value(&cfg.Remote.ProxyURL).Validate(config.ValidateProxyURL),
+		),
+		huh.NewGroup(
+			huh.NewInput().Title("Хост local").Description("Адрес локального PostgreSQL").Placeholder("localhost").Value(&cfg.Local.Host).Validate(config.ValidateHost),
+			huh.NewInput().Title("Порт local").Description("Порт локального PostgreSQL").Accessor(intStringAccessor{value: &cfg.Local.Port}).Validate(validatePortString),
+			huh.NewInput().Title("Пользователь local").Description("Пользователь локальной БД").Value(&cfg.Local.User).Validate(requiredString),
+			huh.NewInput().Title("Пароль local").Description("Пароль локальной БД").Value(&cfg.Local.Password).Password(true),
+			huh.NewSelect[string]().Title("SSL mode local").Description("libpq sslmode").Options(huh.NewOptions("disable", "require", "verify-ca", "verify-full")...).Value(&cfg.Local.SSLMode).Validate(config.ValidateSSLMode),
+		),
+		huh.NewGroup(
+			huh.NewInput().Title("Потоки").Description("Количество потоков COPY").Accessor(intStringAccessor{value: &cfg.Runtime.Threads}).Validate(validatePositiveInt),
+			huh.NewSelect[string]().Title("Движок").Description("native/external/auto").Options(huh.NewOptions("native", "external", "auto")...).Value(&cfg.Runtime.Engine).Validate(validateEngineString),
+			huh.NewInput().Title("База по умолчанию").Description("Необязательно: если команда без db").Value(&cfg.Runtime.DefaultDatabase),
+			huh.NewConfirm().Title("Использовать системные pg_dump/pg_restore из PATH?").Value(&cfg.Runtime.UseSystemPgtools).Affirmative("Да").Negative("Нет"),
+			huh.NewConfirm().Title("Создавать индексы конкурентно, когда возможно?").Value(&cfg.Runtime.ConcurrentIndexes).Affirmative("Да").Negative("Нет"),
+		),
+		huh.NewGroup(
+			huh.NewSelect[string]().Title("Уровень логов").Options(huh.NewOptions("debug", "info", "warn", "error")...).Value(&cfg.Logging.Level).Validate(validateLogLevel),
+			huh.NewSelect[string]().Title("Формат логов").Options(huh.NewOptions("text", "json")...).Value(&cfg.Logging.Format).Validate(validateLogFormat),
+			huh.NewNote().Title("Готово").Description("Нажмите Enter, чтобы сохранить настройки.").Next(true).NextLabel("Сохранить"),
+		),
+	)
+}
+
+func configFormTitle(mode ConfigEditorMode) string {
+	switch mode {
+	case WizardMode:
+		return "Первичная настройка pgsync"
+	case ResetMode:
+		return "Сброс и новая настройка pgsync"
+	default:
+		return "Настройки pgsync"
+	}
+}
+
+type intStringAccessor struct {
+	value *int
+}
+
+func (a intStringAccessor) Get() string {
+	if a.value == nil {
+		return ""
+	}
+	return strconv.Itoa(*a.value)
+}
+
+func (a intStringAccessor) Set(value string) {
+	if a.value == nil {
+		return
+	}
+	parsed, err := strconv.Atoi(value)
+	if err == nil {
+		*a.value = parsed
+	}
 }

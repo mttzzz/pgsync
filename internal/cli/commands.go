@@ -54,7 +54,7 @@ func NewRootCommand(app App) *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if app.TUIRunner != nil {
-				return runTUI(cmd.Context(), app, TUIModeApp)
+				return runTUI(cmd.Context(), app, TUIModeApp, flags.ConfigPath)
 			}
 			return cmd.Help()
 		},
@@ -67,11 +67,11 @@ func NewRootCommand(app App) *cobra.Command {
 		newVersionCommand(app),
 		newSyncCommand(app, flags),
 		newConfigCommand(app, flags),
-		newTUICommand(app),
+		newTUICommand(app, flags),
 		newDoctorCommand(app, flags),
 		newListCommand(app, flags),
 		newStatusCommand(app, flags),
-		newTextCommand(app),
+		newTextCommand(app, flags),
 	)
 	cmd.AddCommand(newUnimplementedCommand("upgrade"))
 	return cmd

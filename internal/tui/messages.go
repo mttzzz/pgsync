@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/mttzzz/pgsync/internal/config"
+	"github.com/mttzzz/pgsync/internal/engine"
 	"github.com/mttzzz/pgsync/internal/models"
 )
 
@@ -21,6 +22,15 @@ type DatabasesLoadedMsg struct {
 type TablesLoadedMsg struct {
 	Tables []models.Table
 	Err    error
+}
+
+type syncStartedMsg struct {
+	events <-chan engine.Event
+	done   <-chan SyncFinishedMsg
+}
+
+type syncProgressMsg struct {
+	Event engine.Event
 }
 
 // SyncFinishedMsg reports sync completion.

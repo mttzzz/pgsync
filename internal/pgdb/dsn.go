@@ -30,11 +30,11 @@ type Endpoint struct {
 	Password string
 	Database string
 	SSLMode  string
+	ProxyURL string
 }
 
 /* EndpointFromConfig converts config.Connection to Endpoint. databaseOverride,
- * when non-empty, wins over the configured database. ProxyURL is intentionally
- * ignored because proxy routing is handled by Phase-1 dialer plumbing.
+ * when non-empty, wins over the configured database.
  */
 func EndpointFromConfig(c config.Connection, databaseOverride string) Endpoint {
 	database := c.Database
@@ -48,6 +48,7 @@ func EndpointFromConfig(c config.Connection, databaseOverride string) Endpoint {
 		Password: c.Password,
 		Database: database,
 		SSLMode:  c.SSLMode,
+		ProxyURL: c.ProxyURL,
 	}
 }
 

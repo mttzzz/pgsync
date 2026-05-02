@@ -93,12 +93,18 @@ func (h *httpConnectDialer) DialContext(ctx context.Context, network, addr strin
 	if err != nil {
 		return nil, fmt.Errorf("dial http proxy: %w", err)
 	}
-	request := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", addr, addr)
-	if _, err := conn.Write([]byte(request)); err != nil {
+	request := (&http.Request{Method: http.MethodConnect, URL: &url.URL{Opaque: addr}, Host: addr, Header: make(http.Header)}).WithContext(ctx)
+	if h.proxyURL.User != nil {
+		password, _ := h.proxyURL.User.Password()
+		request.SetBasicAuth(h.proxyURL.User.Username(), password)
+		request.Header.Set("Proxy-Authorization", request.Header.Get("Authorization"))
+		request.Header.Del("Authorization")
+	}
+	if err := request.Write(conn); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("write CONNECT: %w", err)
 	}
-	response, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodConnect})
+	response, err := http.ReadResponse(bufio.NewReader(conn), request)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("read CONNECT response: %w", err)

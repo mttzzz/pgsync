@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/mttzzz/pgsync/internal/engine/pgtools"
 	"github.com/mttzzz/pgsync/internal/pgdb"
+	"github.com/mttzzz/pgsync/internal/proxy"
 	"github.com/mttzzz/pgsync/internal/runner"
 )
 
@@ -45,7 +49,19 @@ func (d *SchemaDumper) Dump(ctx context.Context, source pgdb.Endpoint, section S
 		return "", errors.New("schema dumper locator is required")
 	}
 
-	connString, err := pgdb.BuildConnString(source)
+	dumpSource := source
+	cleanup := func() {}
+	if source.ProxyURL != "" {
+		proxiedSource, closeTunnel, err := startPgDumpProxyTunnel(ctx, source)
+		if err != nil {
+			return "", err
+		}
+		dumpSource = proxiedSource
+		cleanup = closeTunnel
+	}
+	defer cleanup()
+
+	connString, err := pgdb.BuildConnString(dumpSource)
 	if err != nil {
 		return "", fmt.Errorf("build source connection string: %w", err)
 	}
@@ -71,6 +87,63 @@ func (d *SchemaDumper) Dump(ctx context.Context, source pgdb.Endpoint, section S
 		return "", errors.New("pg_dump returned empty pre-data schema")
 	}
 	return sql, nil
+}
+
+func startPgDumpProxyTunnel(ctx context.Context, source pgdb.Endpoint) (pgdb.Endpoint, func(), error) {
+	dialer, err := proxy.NewDialer(source.ProxyURL)
+	if err != nil {
+		return pgdb.Endpoint{}, nil, fmt.Errorf("init pg_dump proxy: %w", err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return pgdb.Endpoint{}, nil, fmt.Errorf("listen pg_dump proxy tunnel: %w", err)
+	}
+
+	remoteAddr := net.JoinHostPort(source.Host, strconv.Itoa(source.Port))
+	done := make(chan struct{})
+	go acceptPgDumpProxyTunnel(ctx, listener, dialer, remoteAddr, done)
+
+	proxied := source
+	proxied.Host = "127.0.0.1"
+	proxied.Port = listener.Addr().(*net.TCPAddr).Port
+	proxied.ProxyURL = ""
+	cleanup := func() {
+		_ = listener.Close()
+		<-done
+	}
+	return proxied, cleanup, nil
+}
+
+func acceptPgDumpProxyTunnel(ctx context.Context, listener net.Listener, dialer proxy.Dialer, remoteAddr string, done chan<- struct{}) {
+	defer close(done)
+	for {
+		localConn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		go bridgePgDumpProxyConn(ctx, localConn, dialer, remoteAddr)
+	}
+}
+
+func bridgePgDumpProxyConn(ctx context.Context, localConn net.Conn, dialer proxy.Dialer, remoteAddr string) {
+	remoteConn, err := dialer.DialContext(ctx, "tcp", remoteAddr)
+	if err != nil {
+		_ = localConn.Close()
+		return
+	}
+	defer func() { _ = localConn.Close() }()
+	defer func() { _ = remoteConn.Close() }()
+
+	copyDone := make(chan struct{}, 2)
+	go func() {
+		_, _ = io.Copy(remoteConn, localConn)
+		copyDone <- struct{}{}
+	}()
+	go func() {
+		_, _ = io.Copy(localConn, remoteConn)
+		copyDone <- struct{}{}
+	}()
+	<-copyDone
 }
 
 func stripPgDumpMetaCommands(sql string) string {

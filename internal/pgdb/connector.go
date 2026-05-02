@@ -4,16 +4,23 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mttzzz/pgsync/internal/config"
+	"github.com/mttzzz/pgsync/internal/proxy"
 )
 
 type copyConnOpener func(ctx context.Context, connString string) (CopyConn, error)
 type nativeOpener func(ctx context.Context, connString string) (*pgx.Conn, error)
+
+// ContextDialer is the network dialer shape accepted by pgx/pgconn.
+type ContextDialer interface {
+	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+}
 
 type connOperations struct {
 	query     func(ctx context.Context, sql string, args ...any) (Rows, error)
@@ -44,6 +51,16 @@ func NewPgxConnector() *PgxConnector {
 	return &PgxConnector{open: openPgxConn}
 }
 
+/* NewPgxConnectorWithDialer returns a connector backed by pgx with a custom network dialer. */
+func NewPgxConnectorWithDialer(dialer ContextDialer) *PgxConnector {
+	if dialer == nil {
+		return NewPgxConnector()
+	}
+	return &PgxConnector{open: func(ctx context.Context, connString string) (CopyConn, error) {
+		return openPgxConnWithDialer(ctx, connString, dialer)
+	}}
+}
+
 /* Connect opens an Endpoint with pgx and redacts the DSN in returned errors. */
 func (c *PgxConnector) Connect(ctx context.Context, ep Endpoint) (CopyConn, error) {
 	connString, err := BuildConnString(ep)
@@ -51,6 +68,15 @@ func (c *PgxConnector) Connect(ctx context.Context, ep Endpoint) (CopyConn, erro
 		return nil, fmt.Errorf("build pg connection string: %w", err)
 	}
 	open := c.open
+	if ep.ProxyURL != "" {
+		dialer, dialErr := proxy.NewDialer(ep.ProxyURL)
+		if dialErr != nil {
+			return nil, fmt.Errorf("init proxy: %w", dialErr)
+		}
+		open = func(ctx context.Context, connString string) (CopyConn, error) {
+			return openPgxConnWithDialer(ctx, connString, dialer)
+		}
+	}
 	if open == nil {
 		open = openPgxConn
 	}
@@ -169,6 +195,19 @@ func (c *PgxConn) ExecMulti(ctx context.Context, sql string) error {
 
 func openPgxConn(ctx context.Context, connString string) (CopyConn, error) {
 	return openPgxConnWith(ctx, connString, pgx.Connect)
+}
+
+func openPgxConnWithDialer(ctx context.Context, connString string, dialer ContextDialer) (CopyConn, error) {
+	cfg, err := pgx.ParseConfig(connString)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Config.DialFunc = dialer.DialContext
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return NewPgxConn(conn), nil
 }
 
 func openPgxConnWith(ctx context.Context, connString string, open nativeOpener) (CopyConn, error) {

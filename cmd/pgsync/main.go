@@ -2,18 +2,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/mttzzz/pgsync/internal/cli"
-	"github.com/mttzzz/pgsync/internal/config"
 	"github.com/mttzzz/pgsync/internal/engine"
 	"github.com/mttzzz/pgsync/internal/engine/native"
-	"github.com/mttzzz/pgsync/internal/tui"
 )
 
 func main() {
@@ -25,11 +20,7 @@ func main() {
 			}
 			return native.NewDefault(logger)
 		},
-		TUIRunner: cli.TUIRunnerFunc(func(ctx context.Context, mode cli.TUIMode) error {
-			program := tea.NewProgram(tui.NewApp(config.Defaults()))
-			_, err := program.Run()
-			return err
-		}),
+		TUIRunner: productionTUIRunner{},
 	})
 	if err := cmd.Execute(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
