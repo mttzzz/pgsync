@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 env:
   DEFAULT_BRANCH: main
@@ -53,3 +54,6 @@ jobs:
           git tag "v$next"
           git push origin HEAD:${{ env.DEFAULT_BRANCH }}
           git push origin "v$next"
+          gh workflow run release.yml --ref "v$next"
+        env:
+          GH_TOKEN: ${{ github.token }}
