@@ -238,7 +238,10 @@ func TestExecuteHappyPathRunsStagesInOrder(t *testing.T) {
 	assert.Equal(t, "appdb", connector.calls[0].Database)
 	assert.Equal(t, "appdb", connector.calls[1].Database)
 	assert.Equal(t, engine.EventSyncStart, observer.events[0].Name)
-	assert.Equal(t, engine.EventSyncDone, observer.events[len(observer.events)-1].Name)
+	doneEvent := observer.events[len(observer.events)-1]
+	assert.Equal(t, engine.EventSyncDone, doneEvent.Name)
+	assert.Equal(t, int64(42), doneEvent.Bytes)
+	assert.Equal(t, int64(7), doneEvent.Rows)
 }
 
 func TestExecuteStageFailuresEmitFailedEventAndCleanup(t *testing.T) {

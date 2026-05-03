@@ -99,19 +99,20 @@ func addEventNDJSONFields(record map[string]any, name string, event engine.Event
 		record["duration_ms"] = event.Duration.Milliseconds()
 	case engine.EventTableCopyStart:
 		putString(record, "table", event.Table)
-		record["est_rows"] = event.Estimated
+		record["disk_bytes_est"] = event.Estimated
 	case engine.EventTableCopyProgress:
 		putString(record, "table", event.Table)
-		record["rows"] = event.Rows
-		record["pct"] = event.Percent
+		record["copy_stream_bytes"] = event.Bytes
+		record["pct_of_disk_est"] = event.Percent
 		record["bytes_per_sec"] = event.BytesPerSec
 	case engine.EventTableCopyDone:
 		putString(record, "table", event.Table)
 		record["rows"] = event.Rows
+		record["copy_stream_bytes"] = event.Bytes
 		record["duration_ms"] = event.Duration.Milliseconds()
 	case engine.EventSyncDone:
 		record["duration_ms"] = event.Duration.Milliseconds()
-		record["bytes"] = event.Bytes
+		record["copy_stream_bytes"] = event.Bytes
 	case engine.EventSyncFailed:
 		putString(record, "stage", event.Stage)
 		putString(record, "table", event.Table)

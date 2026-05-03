@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Color palette values define the shared TUI theme.
 var (
 	ColorBg      = lipgloss.Color("#0B1020")
 	ColorPanel   = lipgloss.Color("#111827")

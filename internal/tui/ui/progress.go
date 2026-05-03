@@ -30,9 +30,6 @@ func ProgressBar(width int, percent float64) string {
 func MiniBar(width int, percent float64) string {
 	value := clampProgress(percent / 100)
 	filled := int(value * float64(width))
-	if filled > width {
-		filled = width
-	}
 	styles := NewStyles()
 	return styles.Success.Render(strings.Repeat("█", filled)) + styles.Muted.Render(strings.Repeat("░", width-filled))
 }

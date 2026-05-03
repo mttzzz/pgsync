@@ -65,7 +65,7 @@ func PrintPlan(w io.Writer, plan *models.SyncPlan, opts PlainOptions) error {
 		return err
 	}
 	for index, table := range plan.Tables {
-		if _, err := fmt.Fprintf(writer, "%d. %s rows=%d bytes=%d\n",
+		if _, err := fmt.Fprintf(writer, "%d. %s rows_est=%d disk_bytes_est=%d\n",
 			index+1, plainTableName(table), table.Rows, table.SizeBytes); err != nil {
 			return err
 		}
@@ -78,7 +78,7 @@ func PrintResult(w io.Writer, result *models.SyncResult, opts PlainOptions) erro
 	if result == nil {
 		return errors.New("sync result is required")
 	}
-	_, err := fmt.Fprintf(outputWriter(w), "%s database=%s tables=%d rows=%d bytes=%d duration=%s\n",
+	_, err := fmt.Fprintf(outputWriter(w), "%s database=%s tables=%d rows=%d copy_stream_bytes=%d duration=%s\n",
 		plainColor("synced", ansiBold, opts), result.Database, result.TablesCopied,
 		result.RowsCopied, result.BytesCopied, formatDuration(result.Duration()))
 	return err
@@ -103,7 +103,7 @@ func plainSyncLine(event engine.Event, opts PlainOptions) string {
 		return fmt.Sprintf("%s database=%s tables=%d engine=%s",
 			plainColor("starting sync", ansiBold, opts), event.Database, event.Tables, event.Engine)
 	case engine.EventSyncDone:
-		return fmt.Sprintf("sync done tables=%d bytes=%d duration=%s",
+		return fmt.Sprintf("sync done tables=%d copy_stream_bytes=%d duration=%s",
 			event.Tables, event.Bytes, formatDuration(event.Duration))
 	case engine.EventSyncFailed:
 		return plainFailureLine(event, opts)
@@ -130,12 +130,12 @@ func plainSchemaLine(event engine.Event, _ PlainOptions) string {
 func plainTableLine(event engine.Event, _ PlainOptions) string {
 	switch event.Name {
 	case engine.EventTableCopyStart:
-		return fmt.Sprintf("copying table %s est_rows=%d", event.Table, event.Estimated)
+		return fmt.Sprintf("copying table %s disk_bytes_est=%d", event.Table, event.Estimated)
 	case engine.EventTableCopyProgress:
-		return fmt.Sprintf("table %s rows=%d pct=%.1f%% bytes_per_sec=%.0f",
-			event.Table, event.Rows, event.Percent, event.BytesPerSec)
+		return fmt.Sprintf("table %s copy_stream_bytes=%d pct_of_disk_est=%.1f%% bytes_per_sec=%.0f",
+			event.Table, event.Bytes, event.Percent, event.BytesPerSec)
 	case engine.EventTableCopyDone:
-		return fmt.Sprintf("table %s done rows=%d bytes=%d duration=%s",
+		return fmt.Sprintf("table %s done rows=%d copy_stream_bytes=%d duration=%s",
 			event.Table, event.Rows, event.Bytes, formatDuration(event.Duration))
 	default:
 		return ""

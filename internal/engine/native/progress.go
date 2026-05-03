@@ -116,7 +116,6 @@ func (p *ProgressReader) emit(now time.Time) {
 		Stage:       copyStage,
 		Engine:      string(engine.ModeNative),
 		Table:       p.table,
-		Rows:        p.bytes,
 		Estimated:   p.estimated,
 		Bytes:       p.bytes,
 		Percent:     progressPercent(p.bytes, p.estimated),

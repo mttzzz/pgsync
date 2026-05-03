@@ -95,7 +95,8 @@ func MainMenu(selected ...int) StaticScreen {
 	}
 
 	styles := ui.NewStyles()
-	lines := []string{styles.PanelTitle.Render("Главное меню"), ""}
+	lines := make([]string, 0, 2+len(items))
+	lines = append(lines, styles.PanelTitle.Render("Главное меню"), "")
 	for i, item := range items {
 		prefix := "  "
 		row := item
@@ -220,7 +221,7 @@ func renderDatabaseTable(dbs []models.Database, opts DatabaseListOptions, width 
 	ownerWidth := clampInt(contentWidth-nameWidth-39, 8, 28)
 
 	lines := []string{
-		renderListHeader([]listColumn{{Width: 1}, {Title: "Database", Width: nameWidth}, {Title: "Size", Width: 12, AlignRight: true}, {Title: "Tables", Width: 8, AlignRight: true}, {Title: "Owner", Width: ownerWidth}}),
+		renderListHeader([]listColumn{{Width: 1}, {Title: "Database", Width: nameWidth}, {Title: "DB size", Width: 12, AlignRight: true}, {Title: "Tables", Width: 8, AlignRight: true}, {Title: "Owner", Width: ownerWidth}}),
 	}
 	for index := start; index < end; index++ {
 		db := dbs[index]
@@ -237,7 +238,7 @@ func renderTablesTable(tables []models.Table, opts TableListOptions, width int, 
 	nameWidth := clampInt(contentWidth-33, 28, 78)
 
 	lines := []string{
-		renderListHeader([]listColumn{{Width: 1}, {Title: "Table", Width: nameWidth}, {Title: "Rows", Width: 14, AlignRight: true}, {Title: "Size", Width: 12, AlignRight: true}}),
+		renderListHeader([]listColumn{{Width: 1}, {Title: "Table", Width: nameWidth}, {Title: "Rows est.", Width: 14, AlignRight: true}, {Title: "Disk est.", Width: 12, AlignRight: true}}),
 	}
 	for index := start; index < end; index++ {
 		table := tables[index]
@@ -330,7 +331,7 @@ func databaseRangeFooter(dbs []models.Database, checked map[string]bool, start i
 	return strings.Join([]string{
 		styles.Muted.Render(fmt.Sprintf("Showing %s-%s of %s", ui.FormatCount(start+1), ui.FormatCount(end), ui.FormatCount(len(dbs)))),
 		ui.Metric("Selected", ui.FormatCount(selected), styles.Success),
-		ui.Metric("Size", ui.FormatBytes(bytes), styles.Accent),
+		ui.Metric("DB size", ui.FormatBytes(bytes), styles.Accent),
 		ui.Metric("Tables", ui.FormatCount(tables), styles.Accent),
 	}, "   ")
 }
@@ -366,8 +367,15 @@ func clampIndexForTable(index int, length int) int {
 }
 
 func tableListSummary(tables []models.Table, checked map[string]bool) string {
+	styles := ui.NewStyles()
 	selectedTables := selectedTableCount(tables, checked)
-	return fmt.Sprintf("Visible: %s   Selected: %s   Selected size est.: %s   Selected rows est.: %s", ui.NewStyles().Accent.Render(ui.FormatCount(len(tables))), ui.NewStyles().Success.Render(ui.FormatCount(selectedTables)), ui.NewStyles().Accent.Render(ui.FormatBytes(selectedTableBytes(tables, checked))), ui.NewStyles().Accent.Render(ui.FormatInt(selectedTableRows(tables, checked))))
+	return fmt.Sprintf(
+		"Visible: %s   Selected: %s   Selected disk est.: %s   Selected rows est.: %s",
+		styles.Accent.Render(ui.FormatCount(len(tables))),
+		styles.Success.Render(ui.FormatCount(selectedTables)),
+		styles.Accent.Render(ui.FormatBytes(selectedTableBytes(tables, checked))),
+		styles.Accent.Render(ui.FormatInt(selectedTableRows(tables, checked))),
+	)
 }
 
 func totalTableBytes(tables []models.Table) int64 {
@@ -480,8 +488,8 @@ func renderConfirmPlan(plan *models.SyncPlan, header HeaderOptions) string {
 		lines = append(lines,
 			ui.Metric("Database", plan.Database, styles.Primary),
 			ui.Metric("Tables", ui.FormatCount(len(plan.Tables)), styles.Success),
-			ui.Metric("Estimated rows", ui.FormatInt(selectedRows), styles.Accent),
-			ui.Metric("Estimated size", ui.FormatBytes(estimated), styles.Accent),
+			ui.Metric("Rows est.", ui.FormatInt(selectedRows), styles.Accent),
+			ui.Metric("Disk size est.", ui.FormatBytes(estimated), styles.Accent),
 			ui.Metric("Engine", plan.Engine, styles.Primary),
 			ui.Metric("Copy technology", ui.CopyTechnology(plan.Engine, plan.UseSystemPgtools), styles.Success),
 			ui.Metric("Workers", ui.FormatCount(plan.Threads), styles.Primary),
@@ -509,12 +517,12 @@ func renderProgress(snapshot ProgressSnapshot) string {
 	}
 
 	tabs := tabBar([]string{"Overview", "Events"}, snapshot.Tab)
-	content := ""
+	var content string
 	switch normalizedTab(snapshot.Tab, 2) {
 	case 1:
-		content = panelFixed("Events", renderEvents(snapshot.Events, bodyWidth), bodyWidth, 18)
+		content = panelFixed("Events", renderEvents(snapshot.Events, bodyWidth), bodyWidth)
 	default:
-		content = panelFixed("Overview", renderProgressOverview(snapshot, bodyWidth), bodyWidth, 18)
+		content = panelFixed("Overview", renderProgressOverview(snapshot, bodyWidth), bodyWidth)
 	}
 	return page(bodyWidth, renderHeader(snapshot.Header), tabs, content, footer(actionsLine([]actionLabel{{"Tab", "switch tab"}, {"P", "pause/resume"}, {"Q", "cancel safely"}})))
 }
@@ -542,14 +550,14 @@ func renderResult(result *models.SyncResult, opts ResultOptions) string {
 	opts.Header.Title = "Sync Report"
 	opts.Header.Width = bodyWidth
 	tabs := tabBar([]string{"Summary", "Stages", "Tables"}, opts.Tab)
-	content := ""
+	var content string
 	switch normalizedTab(opts.Tab, 3) {
 	case 1:
-		content = panelFixed("Stage timings", renderStageTimings(result, bodyWidth), bodyWidth, 18)
+		content = panelFixed("Stage timings", renderStageTimings(result, bodyWidth), bodyWidth)
 	case 2:
-		content = panelFixed("Slowest tables", renderTableResults(opts.Tables, bodyWidth), bodyWidth, 18)
+		content = panelFixed("Slowest tables", renderTableResults(opts.Tables, bodyWidth), bodyWidth)
 	default:
-		content = panelFixed("Result", renderResultSummary(result), bodyWidth, 18)
+		content = panelFixed("Result", renderResultSummary(result), bodyWidth)
 	}
 	return page(bodyWidth, renderHeader(opts.Header), tabs, content, footer(actionsLine([]actionLabel{{"Tab/←/→", "switch tab"}, {"Enter/Q/Esc", "quit"}, {"B", "back to databases"}, {"R", "run again"}})))
 }
@@ -580,14 +588,15 @@ func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 		"",
 		ui.Metric("Stage", stage, styles.Primary),
 		ui.Metric("Current", current, styles.Accent),
-		fmt.Sprintf("%s     %s", ui.Metric("Tables", fmt.Sprintf("%s / %s", ui.FormatCount(snapshot.TablesDone), ui.FormatCount(snapshot.TablesTotal)), styles.Success), ui.Metric("Rows done", fmt.Sprintf("%s / %s", ui.FormatInt(snapshot.RowsCopied), ui.FormatInt(snapshot.RowsEstimated)), styles.Accent)),
-		fmt.Sprintf("%s     %s", ui.Metric("Data", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.BytesCopied), ui.FormatBytes(snapshot.BytesEstimated)), styles.Accent), ui.Metric("Speed", ui.FormatBytesRate(snapshot.BytesPerSec), styles.Success)),
-		fmt.Sprintf("%s     %s     %s", ui.Metric("Elapsed", ui.FormatDurationTenths(elapsed), styles.Primary), ui.Metric("ETA", eta, styles.Warning), ui.Metric("Errors", ui.FormatCount(snapshot.Errors), styles.Danger)),
+		fmt.Sprintf("%s     %s", ui.Metric("Tables", fmt.Sprintf("%s / %s", ui.FormatCount(snapshot.TablesDone), ui.FormatCount(snapshot.TablesTotal)), styles.Success), ui.Metric("Rows done / est.", fmt.Sprintf("%s / %s", ui.FormatInt(snapshot.RowsCopied), ui.FormatInt(snapshot.RowsEstimated)), styles.Accent)),
+		fmt.Sprintf("%s     %s", ui.Metric("COPY stream", ui.FormatBytes(snapshot.BytesCopied), styles.Accent), ui.Metric("Disk estimate", ui.FormatBytes(snapshot.BytesEstimated), styles.Accent)),
+		fmt.Sprintf("%s     %s     %s", ui.Metric("Speed", ui.FormatBytesRate(snapshot.BytesPerSec), styles.Success), ui.Metric("ETA by est.", eta, styles.Warning), ui.Metric("Errors", ui.FormatCount(snapshot.Errors), styles.Danger)),
+		ui.Metric("Elapsed", ui.FormatDurationTenths(elapsed), styles.Primary),
 		"",
 		styles.PanelTitle.Render("Current table"),
 		ui.ProgressBar(bodyWidth-12, snapshot.TablePercent) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.TablePercent)),
-		ui.Metric("Data copied", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.TableBytes), ui.FormatBytes(snapshot.TableBytesEstimate)), styles.Accent),
-		ui.Metric("Rows done", fmt.Sprintf("%s / %s", ui.FormatInt(snapshot.TableRows), ui.FormatInt(snapshot.TableRowsEstimate)), styles.Accent),
+		fmt.Sprintf("%s     %s", ui.Metric("COPY stream", ui.FormatBytes(snapshot.TableBytes), styles.Accent), ui.Metric("Disk estimate", ui.FormatBytes(snapshot.TableBytesEstimate), styles.Accent)),
+		ui.Metric("Rows done / est.", fmt.Sprintf("%s / %s", ui.FormatInt(snapshot.TableRows), ui.FormatInt(snapshot.TableRowsEstimate)), styles.Accent),
 		ui.Metric("Rows/sec", ui.FormatRowsRate(rowsRate), styles.Success),
 		ui.Metric("Table elapsed", ui.FormatDurationTenths(tableElapsed), styles.Primary),
 	}, "\n")
@@ -614,7 +623,7 @@ func renderResultSummary(result *models.SyncResult) string {
 		ui.Metric("Duration", ui.FormatDurationTenths(duration), styles.Primary),
 		ui.Metric("Tables", ui.FormatCount(result.TablesCopied), styles.Success),
 		ui.Metric("Rows", ui.FormatInt(result.RowsCopied), styles.Accent),
-		ui.Metric("Data", ui.FormatBytes(result.BytesCopied), styles.Accent),
+		ui.Metric("COPY stream", ui.FormatBytes(result.BytesCopied), styles.Accent),
 		ui.Metric("Avg speed", ui.FormatBytesRate(avgSpeed), styles.Success),
 	)
 	if result.Err != nil {
@@ -640,7 +649,7 @@ func renderTableResults(rows []TableResultRow, width int) string {
 	if len(rows) == 0 {
 		return styles.Muted.Render("Per-table report will appear after table metrics are collected.")
 	}
-	lines := []string{styles.Muted.Render(fmt.Sprintf("%-32s  %14s  %12s  %10s  %s", "Table", "Rows", "Size", "Duration", "Avg speed")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 40)))}
+	lines := []string{styles.Muted.Render(fmt.Sprintf("%-32s  %14s  %12s  %10s  %s", "Table", "Rows", "COPY stream", "Duration", "Avg speed")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 40)))}
 	for _, row := range rows {
 		lines = append(lines, fmt.Sprintf("%-32s  %14s  %12s  %10s  %s", truncate(row.Table, 32), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes), ui.FormatDurationTenths(row.Duration), ui.FormatBytesRate(row.Speed)))
 	}
@@ -699,11 +708,13 @@ func headerEndpointBlock(label string, conn config.Connection, extras []headerFi
 	labelWidth := 8
 	labelText := styles.Muted.Bold(true).Render(fmt.Sprintf("%-*s", labelWidth, label))
 	hostWidth := maxInt(width-labelWidth-2, 20)
-	lines := []string{labelText + styles.Accent.Render(truncate(headerHostLabel(conn), hostWidth))}
-	fields := []headerField{
-		{Label: "user", Value: dashFallback(conn.User), Style: styles.Primary},
-		{Label: "ssl", Value: dashFallback(conn.SSLMode), Style: styles.Primary},
-	}
+	lines := make([]string, 0, 2)
+	lines = append(lines, labelText+styles.Accent.Render(truncate(headerHostLabel(conn), hostWidth)))
+	fields := make([]headerField, 0, 2+len(extras))
+	fields = append(fields,
+		headerField{Label: "user", Value: dashFallback(conn.User), Style: styles.Primary},
+		headerField{Label: "ssl", Value: dashFallback(conn.SSLMode), Style: styles.Primary},
+	)
 	fields = append(fields, extras...)
 	lines = append(lines, strings.Repeat(" ", labelWidth)+renderHeaderFields(fields, maxInt(width-labelWidth, 20)))
 	return lines
@@ -760,24 +771,6 @@ func dashFallback(value string) string {
 	return value
 }
 
-func elapsedHeader(opts HeaderOptions) string {
-	if !opts.Running || opts.Started.IsZero() {
-		return ""
-	}
-	now := opts.Now
-	if now.IsZero() {
-		now = time.Now()
-	}
-	return "   " + ui.Metric("Elapsed", ui.FormatDurationTenths(now.Sub(opts.Started)), ui.NewStyles().Primary)
-}
-
-func elapsedHeaderPlain(opts HeaderOptions) string {
-	if value := elapsedHeaderValue(opts); value != "" {
-		return "   Elapsed " + value
-	}
-	return ""
-}
-
 func elapsedHeaderValue(opts HeaderOptions) string {
 	if !opts.Running || opts.Started.IsZero() {
 		return ""
@@ -787,12 +780,6 @@ func elapsedHeaderValue(opts HeaderOptions) string {
 		now = time.Now()
 	}
 	return ui.FormatDurationTenths(now.Sub(opts.Started))
-}
-
-func headerKV(label, value string, width int, valueStyle lipgloss.Style) string {
-	labelText := ui.NewStyles().Muted.Render(fmt.Sprintf("%-7s", label))
-	maxValueWidth := maxInt(width-lipgloss.Width(labelText)-1, 12)
-	return labelText + " " + valueStyle.Render(truncate(value, maxValueWidth))
 }
 
 func badge(label string, style lipgloss.Style) string {
@@ -832,7 +819,8 @@ func panel(title, body string, width int) string {
 	return styles.Panel.Width(innerBoxWidth(width)).Render(styles.PanelTitle.Render(title) + "\n" + body)
 }
 
-func panelFixed(title, body string, width int, height int) string {
+func panelFixed(title, body string, width int) string {
+	const height = 18
 	styles := ui.NewStyles()
 	content := styles.PanelTitle.Render(title) + "\n" + fixedHeight(body, maxInt(height-1, 1))
 	return styles.Panel.Width(innerBoxWidth(width)).Height(height).Render(content)
@@ -872,11 +860,6 @@ func normalizedTab(tab int, count int) int {
 		return (tab%count + count) % count
 	}
 	return tab % count
-}
-
-func warningPanel(title, body string, width int) string {
-	styles := ui.NewStyles()
-	return styles.Panel.BorderForeground(ui.ColorWarning).Width(innerBoxWidth(width)).Render(styles.Warning.Render(title) + "\n" + body)
 }
 
 func innerBoxWidth(outerWidth int) int {

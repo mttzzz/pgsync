@@ -19,6 +19,8 @@ github.com/mttzzz/pgsync/internal/models/database.go
 github.com/mttzzz/pgsync/internal/pgdb/connector.go
 github.com/mttzzz/pgsync/internal/proxy/dialer.go
 github.com/mttzzz/pgsync/internal/tui/app.go
+github.com/mttzzz/pgsync/internal/tui/mouse.go
+github.com/mttzzz/pgsync/internal/tui/tick.go
 github.com/mttzzz/pgsync/internal/tui/screens/basic.go
 github.com/mttzzz/pgsync/internal/tui/screens/config_editor.go
 github.com/mttzzz/pgsync/internal/updater/updater.go

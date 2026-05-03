@@ -172,6 +172,19 @@ func TestAppLoadsDatabasesThroughCatalogService(t *testing.T) {
 	assert.Contains(t, app.State().Status, "Loaded")
 }
 
+func TestCurrentPlanTablesFiltersSelectedTables(t *testing.T) {
+	t.Parallel()
+	tables := []models.Table{{Schema: "public", Name: "users"}, {Schema: "public", Name: "orders"}}
+	app := NewApp(validCfg())
+	assert.Nil(t, app.currentPlanTables())
+
+	app.state.Tables = tables
+	app.state.SelectedTables = nil
+	assert.Equal(t, tables, app.currentPlanTables())
+	app.state.SelectedTables = map[string]bool{"public.orders": true}
+	assert.Equal(t, []models.Table{tables[1]}, app.currentPlanTables())
+}
+
 func TestNextScreen(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, screens.MainMenuID, nextScreen(screens.SettingsCheckID))

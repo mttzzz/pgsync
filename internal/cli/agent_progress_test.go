@@ -45,7 +45,7 @@ func TestNDJSONObserverEmitsSpecEvents(t *testing.T) {
 	observer.OnEvent(context.Background(), engine.Event{
 		Name:        engine.EventTableCopyProgress,
 		Table:       "messages",
-		Rows:        120_000,
+		Bytes:       120_000,
 		Percent:     12,
 		BytesPerSec: 42_000_000,
 	})
@@ -53,6 +53,7 @@ func TestNDJSONObserverEmitsSpecEvents(t *testing.T) {
 		Name:     engine.EventTableCopyDone,
 		Table:    "messages",
 		Rows:     1_000_000,
+		Bytes:    665_000_000,
 		Duration: 4231 * time.Millisecond,
 	})
 	observer.OnEvent(context.Background(), engine.Event{Name: engine.EventSchemaPostDataStart})
@@ -96,18 +97,19 @@ func TestNDJSONObserverEmitsSpecEvents(t *testing.T) {
 	assert.Equal(t, fixed.Add(time.Second).Format(time.RFC3339Nano), tableStart["ts"])
 	assert.Equal(t, engine.EventTableCopyStart, tableStart["event"])
 	assert.Equal(t, "messages", tableStart["table"])
-	assert.Equal(t, float64(1_000_000), tableStart["est_rows"])
+	assert.Equal(t, float64(1_000_000), tableStart["disk_bytes_est"])
 
 	progress := decodeNDJSONLine(t, lines[3])
 	assert.Equal(t, engine.EventTableCopyProgress, progress["event"])
 	assert.Equal(t, "messages", progress["table"])
-	assert.Equal(t, float64(120_000), progress["rows"])
-	assert.Equal(t, float64(12), progress["pct"])
+	assert.Equal(t, float64(120_000), progress["copy_stream_bytes"])
+	assert.Equal(t, float64(12), progress["pct_of_disk_est"])
 	assert.Equal(t, float64(42_000_000), progress["bytes_per_sec"])
 
 	tableDone := decodeNDJSONLine(t, lines[4])
 	assert.Equal(t, engine.EventTableCopyDone, tableDone["event"])
 	assert.Equal(t, float64(1_000_000), tableDone["rows"])
+	assert.Equal(t, float64(665_000_000), tableDone["copy_stream_bytes"])
 	assert.Equal(t, float64(4231), tableDone["duration_ms"])
 
 	postDataStart := decodeNDJSONLine(t, lines[5])
@@ -121,7 +123,7 @@ func TestNDJSONObserverEmitsSpecEvents(t *testing.T) {
 	assert.Equal(t, engine.EventSyncDone, syncDone["event"])
 	assert.Equal(t, float64(31420), syncDone["duration_ms"])
 	assert.Equal(t, float64(42), syncDone["tables"])
-	assert.Equal(t, float64(665_000_000), syncDone["bytes"])
+	assert.Equal(t, float64(665_000_000), syncDone["copy_stream_bytes"])
 
 	failed := decodeNDJSONLine(t, lines[8])
 	assert.Equal(t, engine.EventSyncFailed, failed["event"])

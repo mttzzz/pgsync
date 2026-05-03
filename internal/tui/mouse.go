@@ -25,6 +25,7 @@ func (a App) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+//nolint:gocognit,gocyclo // Mirrors keyboard database actions for each clickable zone explicitly.
 func (a App) onDatabaseMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	for index, db := range a.state.Databases {
 		if zone.Get(screens.DatabaseRowZone(index)).InBounds(msg) {
@@ -86,6 +87,7 @@ func (a App) onDatabaseMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+//nolint:gocognit,gocyclo // Mirrors keyboard table actions for each clickable zone explicitly.
 func (a App) onTablesMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	for index, table := range a.state.Tables {
 		if zone.Get(screens.TableRowZone(index)).InBounds(msg) {

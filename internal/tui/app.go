@@ -76,6 +76,8 @@ func (a App) Init() tea.Cmd {
 }
 
 // Update handles global navigation messages.
+//
+//nolint:gocyclo // Central Bubble Tea dispatcher intentionally maps message types explicitly.
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -575,19 +577,6 @@ func waitSyncProgressCmd(events <-chan engine.Event, done <-chan SyncFinishedMsg
 			return msg
 		}
 	}
-}
-
-func progressStage(event engine.Event) string {
-	if event.Table != "" {
-		return event.Table
-	}
-	if event.Stage != "" {
-		return event.Stage
-	}
-	if event.Name != "" {
-		return event.Name
-	}
-	return "waiting"
 }
 
 func progressStatus(event engine.Event) string {

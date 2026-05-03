@@ -56,7 +56,7 @@ func (f *fakeEngine) Execute(ctx context.Context, plan *models.SyncPlan, observe
 		observer.OnEvent(ctx, engine.Event{
 			Name:        engine.EventTableCopyProgress,
 			Table:       "public.users",
-			Rows:        7,
+			Bytes:       7,
 			Percent:     50,
 			BytesPerSec: 90,
 		})
@@ -79,7 +79,7 @@ func TestSyncYesPlansAndExecutes(t *testing.T) {
 	assert.Equal(t, 1, fake.executeCalls)
 	assert.Equal(t, "mydb", fake.lastOptions.Database)
 	assert.Contains(t, out, "starting sync")
-	assert.Contains(t, out, "table public.users rows=7 pct=50.0% bytes_per_sec=90")
+	assert.Contains(t, out, "table public.users copy_stream_bytes=7 pct_of_disk_est=50.0% bytes_per_sec=90")
 	assert.Contains(t, out, "synced")
 	assert.Contains(t, out, "database=mydb")
 }

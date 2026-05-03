@@ -38,6 +38,13 @@ func TestStaticAndBasicScreens(t *testing.T) {
 	assert.Contains(t, Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0), RowsCopied: 3, TablesCopied: 1, BytesCopied: 1024, Err: errors.New("bad")}).View(), "bad")
 }
 
+func TestZoneIdentifiers(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "db-row:3", DatabaseRowZone(3))
+	assert.Equal(t, "table-row:4", TableRowZone(4))
+	assert.Equal(t, "action:confirm", ActionZone(ActionConfirm))
+}
+
 func TestLayoutAndRedaction(t *testing.T) {
 	t.Parallel()
 	theme := styles.NewTheme(true, 12)

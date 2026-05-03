@@ -92,7 +92,7 @@ func TestProgressReaderBytesPerSecondUsesInjectedClock(t *testing.T) {
 	assert.Equal(t, "copy", events[1].Stage)
 	assert.Equal(t, "native", events[1].Engine)
 	assert.Equal(t, "public.users", events[1].Table)
-	assert.Equal(t, int64(4), events[1].Rows)
+	assert.Zero(t, events[1].Rows)
 	assert.Equal(t, int64(8), events[1].Estimated)
 	assert.Equal(t, int64(4), events[1].Bytes)
 	assert.Equal(t, 50.0, events[1].Percent)

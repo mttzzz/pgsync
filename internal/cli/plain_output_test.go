@@ -41,7 +41,7 @@ func TestPlainObserverWritesReadableEventsAndRespectsQuiet(t *testing.T) {
 		{Name: engine.EventSchemaPreDataStart},
 		{Name: engine.EventSchemaPreDataDone, Duration: 820 * time.Millisecond},
 		{Name: engine.EventTableCopyStart, Table: "public.users", Estimated: 1000},
-		{Name: engine.EventTableCopyProgress, Table: "public.users", Rows: 120, Percent: 12, BytesPerSec: 4200},
+		{Name: engine.EventTableCopyProgress, Table: "public.users", Bytes: 120, Percent: 12, BytesPerSec: 4200},
 		{Name: engine.EventTableCopyDone, Table: "public.users", Rows: 1000, Bytes: 4096, Duration: 3 * time.Second},
 		{Name: engine.EventSchemaPostDataStart},
 		{Name: engine.EventSchemaPostDataDone, Duration: time.Second},
@@ -57,12 +57,12 @@ func TestPlainObserverWritesReadableEventsAndRespectsQuiet(t *testing.T) {
 	assert.Contains(t, text, "\x1b[1mstarting sync")
 	assert.Contains(t, text, "database=mydb tables=2 engine=native")
 	assert.Contains(t, text, "schema pre-data: done in 820ms")
-	assert.Contains(t, text, "copying table public.users est_rows=1000")
-	assert.Contains(t, text, "table public.users rows=120 pct=12.0% bytes_per_sec=4200")
-	assert.Contains(t, text, "table public.users done rows=1000 bytes=4096 duration=3s")
+	assert.Contains(t, text, "copying table public.users disk_bytes_est=1000")
+	assert.Contains(t, text, "table public.users copy_stream_bytes=120 pct_of_disk_est=12.0% bytes_per_sec=4200")
+	assert.Contains(t, text, "table public.users done rows=1000 copy_stream_bytes=4096 duration=3s")
 	assert.Contains(t, text, "schema post-data: start")
 	assert.Contains(t, text, "schema post-data: done in 1s")
-	assert.Contains(t, text, "sync done tables=2 bytes=4096 duration=5s")
+	assert.Contains(t, text, "sync done tables=2 copy_stream_bytes=4096 duration=5s")
 	assert.Contains(t, text, "error\x1b[0m stage=copy table=public.users")
 	assert.Contains(t, text, "postgres://u:******@h/db password=******")
 	assert.Contains(t, text, "snapshot.done stage=snapshot error=password=******")
@@ -101,8 +101,8 @@ func TestPrintPlanListsTablesInOrderAndNoColorDisablesANSI(t *testing.T) {
 	text := out.String()
 	assert.Contains(t, text, "plan database=mydb engine=native tables=2 dry_run=true")
 	assert.Contains(t, text, "threads=4 sequences=1")
-	assert.Contains(t, text, "1. public.users rows=2 bytes=20")
-	assert.Contains(t, text, "2. public.orders rows=3 bytes=30")
+	assert.Contains(t, text, "1. public.users rows_est=2 disk_bytes_est=20")
+	assert.Contains(t, text, "2. public.orders rows_est=3 disk_bytes_est=30")
 	assert.NotContains(t, text, "\x1b[")
 }
 
@@ -119,7 +119,7 @@ func TestPrintResultWritesSummaryAndNilWriterIsSafe(t *testing.T) {
 	}
 	var out bytes.Buffer
 	require.NoError(t, PrintResult(&out, result, PlainOptions{}))
-	assert.Equal(t, "synced database=mydb tables=2 rows=7 bytes=9 duration=1.5s\n", out.String())
+	assert.Equal(t, "synced database=mydb tables=2 rows=7 copy_stream_bytes=9 duration=1.5s\n", out.String())
 	require.NoError(t, PrintResult(nil, result, PlainOptions{}))
 }
 

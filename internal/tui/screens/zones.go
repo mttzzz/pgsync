@@ -2,6 +2,7 @@ package screens
 
 import "fmt"
 
+// Action constants identify mouse-clickable action zones.
 const (
 	ActionTables    = "tables"
 	ActionSelectAll = "select-all"

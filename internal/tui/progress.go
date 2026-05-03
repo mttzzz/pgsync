@@ -59,6 +59,8 @@ func NewLiveProgress(plan *models.SyncPlan, now time.Time) LiveProgress {
 }
 
 // Apply records a new engine event and updates derived metrics.
+//
+//nolint:gocyclo // Event aggregation has one explicit branch per engine event type.
 func (p *LiveProgress) Apply(event engine.Event, now time.Time) {
 	if p.StartedAt.IsZero() {
 		p.StartedAt = now
@@ -214,11 +216,11 @@ func eventStageLabel(event engine.Event) string {
 func eventDetails(event engine.Event) string {
 	switch event.Name {
 	case engine.EventTableCopyStart:
-		return "est " + ui.FormatBytes(event.Estimated)
+		return "disk est " + ui.FormatBytes(event.Estimated)
 	case engine.EventTableCopyProgress:
-		return fmt.Sprintf("%s copied, %s, %s", ui.FormatBytes(event.Bytes), ui.FormatPercent(event.Percent), ui.FormatBytesRate(event.BytesPerSec))
+		return fmt.Sprintf("%s COPY stream, %s of disk est, %s", ui.FormatBytes(event.Bytes), ui.FormatPercent(event.Percent), ui.FormatBytesRate(event.BytesPerSec))
 	case engine.EventTableCopyDone:
-		return fmt.Sprintf("%s rows, %s", ui.FormatInt(event.Rows), ui.FormatDurationTenths(event.Duration))
+		return fmt.Sprintf("%s rows, %s COPY stream, %s", ui.FormatInt(event.Rows), ui.FormatBytes(event.Bytes), ui.FormatDurationTenths(event.Duration))
 	case engine.EventSchemaPreDataDone, engine.EventSchemaPostDataDone:
 		return ui.FormatDurationTenths(event.Duration)
 	case engine.EventSyncFailed:

@@ -495,6 +495,8 @@ func (r *executionRun) emitSync(name string, level string, err error) {
 		Database: r.plan.Database,
 		Engine:   string(engine.ModeNative),
 		Tables:   len(r.plan.Tables),
+		Rows:     r.result.RowsCopied,
+		Bytes:    r.result.BytesCopied,
 		Duration: r.result.Duration(),
 		Error:    r.redactError(err),
 	})
