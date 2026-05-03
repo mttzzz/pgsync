@@ -71,6 +71,7 @@ build_one() {
   cp README.md LICENSE "$work/"
   printf 'version=%s\ngit_commit=%s\nbuild_date=%s\n' "$VERSION" "$GIT_COMMIT" "$BUILD_DATE" > "$work/VERSION.txt"
   if [ "$goos" = "windows" ]; then
+    cp "$work/$exe_name" "$DIST/pgsync-windows-amd64.exe"
     if command -v zip >/dev/null; then
       (cd "$work" && zip -q -r "../../$artifact" "$exe_name" README.md LICENSE VERSION.txt)
     else

@@ -35,7 +35,7 @@ fi
 (
   cd "$DIST"
   : > "$OUT.tmp"
-  for artifact in pgsync-windows-amd64.zip pgsync-darwin-arm64.tar.gz pgsync-darwin-amd64.tar.gz pgsync-linux-amd64.tar.gz; do
+  for artifact in pgsync-windows-amd64.exe pgsync-windows-amd64.zip pgsync-darwin-arm64.tar.gz pgsync-darwin-amd64.tar.gz pgsync-linux-amd64.tar.gz; do
     [ -f "$artifact" ] || fail "missing release artifact: $DIST/$artifact"
     # shellcheck disable=SC2086
     $SHA256_CMD "$artifact" | awk '{print $1 "  " $2}' >> "$OUT.tmp"

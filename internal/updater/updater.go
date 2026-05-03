@@ -249,18 +249,23 @@ func (c Client) download(ctx context.Context, url string, w io.Writer) error {
 
 // FindAsset returns the release asset matching goos/goarch.
 func FindAsset(assets []Asset, goos, goarch string) (Asset, error) {
-	want := "pgsync-" + goos + "-" + goarch
-	if goos == "windows" {
-		want += ".zip"
-	} else {
-		want += ".tar.gz"
-	}
-	for _, asset := range assets {
-		if asset.Name == want {
-			return asset, nil
+	wants := assetNames(goos, goarch)
+	for _, want := range wants {
+		for _, asset := range assets {
+			if asset.Name == want {
+				return asset, nil
+			}
 		}
 	}
-	return Asset{}, fmt.Errorf("asset %q not found", want)
+	return Asset{}, fmt.Errorf("asset %q not found", wants[0])
+}
+
+func assetNames(goos, goarch string) []string {
+	base := "pgsync-" + goos + "-" + goarch
+	if goos == "windows" {
+		return []string{base + ".zip", base + ".exe"}
+	}
+	return []string{base + ".tar.gz"}
 }
 
 // FindChecksumAsset returns the checksums.txt release asset.

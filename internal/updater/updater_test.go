@@ -58,6 +58,9 @@ func TestCheckFindAssetVersionAndDiscardHelpers(t *testing.T) {
 	asset, err := FindAsset([]Asset{{Name: "pgsync-windows-amd64.zip", URL: "u"}}, "windows", "amd64")
 	require.NoError(t, err)
 	assert.Equal(t, "u", asset.URL)
+	asset, err = FindAsset([]Asset{{Name: "pgsync-windows-amd64.exe", URL: "legacy"}}, "windows", "amd64")
+	require.NoError(t, err)
+	assert.Equal(t, "legacy", asset.URL)
 	_, err = FindAsset(nil, "darwin", "arm64")
 	assert.Error(t, err)
 

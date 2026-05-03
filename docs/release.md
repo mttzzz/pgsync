@@ -10,7 +10,7 @@ Release binaries are expected to embed PostgreSQL 18 `pg_dump` and `pg_restore` 
 4. Confirm `internal/engine/pgtools/bin/<platform>/` contains real `pg_dump` and `pg_restore` payloads.
 5. Run `make release-local VERSION=vX.Y.Z`.
 
-`package-release.sh` fails if payloads are missing, so release jobs cannot accidentally ship an empty embedded-tools binary.
+`package-release.sh` fails if payloads are missing, so release jobs cannot accidentally ship an empty embedded-tools binary. Windows releases include both `pgsync-windows-amd64.zip` and a raw `pgsync-windows-amd64.exe`; the raw executable keeps older `pgsync update` clients working while the installed command remains `pgsync` through normal Windows `PATHEXT` resolution.
 
 ## Benchmarks
 

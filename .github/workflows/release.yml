@@ -36,6 +36,7 @@ jobs:
         run: make checksums
       - name: Verify artifact set
         run: |
+          test -f dist/pgsync-windows-amd64.exe
           test -f dist/pgsync-windows-amd64.zip
           test -f dist/pgsync-darwin-arm64.tar.gz
           test -f dist/pgsync-darwin-amd64.tar.gz
