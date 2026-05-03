@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -42,6 +43,14 @@ func ApplyEnv(cfg Config, env map[string]string) (Config, error) {
 		}
 	}
 
+	if rawURL := strings.TrimSpace(env["POSTGRES_URL"]); rawURL != "" {
+		var err error
+		cfg, err = applyPostgresURL(cfg, rawURL)
+		if err != nil {
+			return Config{}, fmt.Errorf("env POSTGRES_URL: %w", err)
+		}
+	}
+
 	bindings := []binding{
 		{"PGSYNC_REMOTE_HOST", mustStr(&cfg.Remote.Host)},
 		{"PGSYNC_REMOTE_PORT", mustInt(&cfg.Remote.Port)},
@@ -74,4 +83,42 @@ func ApplyEnv(cfg Config, env map[string]string) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+//nolint:gocyclo // URL parsing maps optional connection components into config explicitly.
+func applyPostgresURL(cfg Config, rawURL string) (Config, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return Config{}, fmt.Errorf("parse postgres url: %w", err)
+	}
+	if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
+		return Config{}, fmt.Errorf("postgres url scheme must be postgres or postgresql, got %q", parsed.Scheme)
+	}
+	if strings.TrimSpace(parsed.Hostname()) == "" {
+		return Config{}, fmt.Errorf("postgres url host is required")
+	}
+
+	cfg.Remote.Host = parsed.Hostname()
+	cfg.Remote.Port = 5432
+	if port := parsed.Port(); port != "" {
+		cfg.Remote.Port, _ = strconv.Atoi(port)
+	}
+	if parsed.User != nil {
+		cfg.Remote.User = parsed.User.Username()
+		if password, ok := parsed.User.Password(); ok {
+			cfg.Remote.Password = password
+		}
+	}
+	if database := postgresURLDatabase(parsed); database != "" {
+		cfg.Remote.Database = database
+		cfg.Runtime.DefaultDatabase = database
+	}
+	if sslMode := strings.TrimSpace(parsed.Query().Get("sslmode")); sslMode != "" {
+		cfg.Remote.SSLMode = sslMode
+	}
+	return cfg, nil
+}
+
+func postgresURLDatabase(parsed *url.URL) string {
+	return strings.TrimPrefix(parsed.Path, "/")
 }

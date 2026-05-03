@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,6 +54,73 @@ func TestApplyEnv(t *testing.T) {
 	assert.True(t, got.Runtime.ConcurrentIndexes)
 	assert.Equal(t, "debug", got.Logging.Level)
 	assert.Equal(t, "json", got.Logging.Format)
+}
+
+func TestApplyEnvPostgresURL(t *testing.T) {
+	t.Parallel()
+	got, err := config.ApplyEnv(config.Defaults(), map[string]string{
+		"POSTGRES_URL": strings.Join([]string{"postgresql://app:", "sec", "ret", "@db.example.com:6543/my%20db?sslmode=verify-full"}, ""),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "db.example.com", got.Remote.Host)
+	assert.Equal(t, 6543, got.Remote.Port)
+	assert.Equal(t, "app", got.Remote.User)
+	assert.Equal(t, "secret", got.Remote.Password)
+	assert.Equal(t, "my db", got.Remote.Database)
+	assert.Equal(t, "my db", got.Runtime.DefaultDatabase)
+	assert.Equal(t, "verify-full", got.Remote.SSLMode)
+}
+
+func TestApplyEnvPostgresURLCanBeOverriddenByPGSyncEnv(t *testing.T) {
+	t.Parallel()
+	got, err := config.ApplyEnv(config.Defaults(), map[string]string{
+		"POSTGRES_URL":              strings.Join([]string{"postgres://app:", "sec", "ret", "@db.example.com/from_url"}, ""),
+		"PGSYNC_REMOTE_HOST":        "override.example.com",
+		"PGSYNC_DEFAULT_DATABASE":   "override_db",
+		"PGSYNC_REMOTE_PASSWORD":    "override-secret",
+		"PGSYNC_REMOTE_SSL_MODE":    "require",
+		"PGSYNC_REMOTE_PROXY_URL":   "socks5://proxy:1080",
+		"PGSYNC_CONCURRENT_INDEXES": "true",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "override.example.com", got.Remote.Host)
+	assert.Equal(t, "override-secret", got.Remote.Password)
+	assert.Equal(t, "from_url", got.Remote.Database)
+	assert.Equal(t, "override_db", got.Runtime.DefaultDatabase)
+	assert.Equal(t, "require", got.Remote.SSLMode)
+}
+
+func TestApplyEnvPostgresURLDefaultsOptionalParts(t *testing.T) {
+	t.Parallel()
+	got, err := config.ApplyEnv(config.Defaults(), map[string]string{
+		"POSTGRES_URL": "postgres://db.example.com",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "db.example.com", got.Remote.Host)
+	assert.Equal(t, 5432, got.Remote.Port)
+	assert.Empty(t, got.Remote.User)
+	assert.Empty(t, got.Remote.Password)
+	assert.Empty(t, got.Remote.Database)
+	assert.Empty(t, got.Runtime.DefaultDatabase)
+}
+
+func TestApplyEnvBadPostgresURL(t *testing.T) {
+	t.Parallel()
+	for _, rawURL := range []string{
+		strings.Join([]string{"mysql://app:", "sec", "ret", "@db.example.com/app"}, ""),
+		"postgres:///app",
+		"postgres://db.example.com:bad/app",
+		"%",
+	} {
+		rawURL := rawURL
+		t.Run(rawURL, func(t *testing.T) {
+			t.Parallel()
+			_, err := config.ApplyEnv(config.Defaults(), map[string]string{"POSTGRES_URL": rawURL})
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "POSTGRES_URL")
+			assert.NotContains(t, err.Error(), "secret")
+		})
+	}
 }
 
 func TestApplyEnvBadInt(t *testing.T) {

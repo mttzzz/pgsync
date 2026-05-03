@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,6 +100,24 @@ func TestResolverSurfacesConfigLoadErrorWhenOverridesAreIncomplete(t *testing.T)
 	assert.Contains(t, err.Error(), "load config")
 }
 
+func TestResolverUsesPostgresURLForRemoteAndDefaultDatabase(t *testing.T) {
+	t.Parallel()
+	missing := filepath.Join(t.TempDir(), "missing.toml")
+	got, err := (Resolver{StorePath: missing, Env: map[string]string{
+		"POSTGRES_URL":          strings.Join([]string{"postgres://app:", "sec", "ret", "@remote.example.com:6543/url_db?sslmode=require"}, ""),
+		"PGSYNC_LOCAL_HOST":     "env-local",
+		"PGSYNC_LOCAL_USER":     "postgres",
+		"PGSYNC_LOCAL_PASSWORD": "local-pass",
+	}}).Resolve(context.Background(), FlagOverrides{})
+	require.NoError(t, err)
+	assert.Equal(t, "remote.example.com", got.Remote.Host)
+	assert.Equal(t, 6543, got.Remote.Port)
+	assert.Equal(t, "app", got.Remote.User)
+	assert.Equal(t, "secret", got.Remote.Password)
+	assert.Equal(t, "url_db", got.Remote.Database)
+	assert.Equal(t, "url_db", got.Runtime.DefaultDatabase)
+}
+
 func TestResolverIgnoresConfigLoadErrorWhenEnvSuppliesHosts(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "missing.toml")
@@ -168,6 +187,16 @@ func TestPlanOptionsFromConfig(t *testing.T) {
 	assert.True(t, opts.Analyze)
 }
 
+func TestPlanOptionsFromConfigFallsBackToRemoteDatabase(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig()
+	cfg.Runtime.DefaultDatabase = ""
+	cfg.Remote.Database = "remote-db"
+	opts, err := PlanOptionsFromConfig(cfg, " ", SyncFlags{})
+	require.NoError(t, err)
+	assert.Equal(t, "remote-db", opts.Database)
+}
+
 func TestPlanOptionsFromConfigValidationError(t *testing.T) {
 	t.Parallel()
 	cfg := testConfig()
@@ -229,7 +258,7 @@ func clearPGSyncEnv(t *testing.T) {
 		"PGSYNC_REMOTE_DATABASE", "PGSYNC_REMOTE_SSL_MODE", "PGSYNC_REMOTE_PROXY_URL",
 		"PGSYNC_LOCAL_HOST", "PGSYNC_LOCAL_PORT", "PGSYNC_LOCAL_USER", "PGSYNC_LOCAL_PASSWORD",
 		"PGSYNC_LOCAL_SSL_MODE", "PGSYNC_THREADS", "PGSYNC_ENGINE", "PGSYNC_USE_SYSTEM_PGTOOLS",
-		"PGSYNC_DEFAULT_DATABASE", "PGSYNC_CONCURRENT_INDEXES", "PGSYNC_LOG_LEVEL", "PGSYNC_LOG_FORMAT",
+		"PGSYNC_DEFAULT_DATABASE", "PGSYNC_CONCURRENT_INDEXES", "PGSYNC_LOG_LEVEL", "PGSYNC_LOG_FORMAT", "POSTGRES_URL",
 	}
 	for _, key := range keys {
 		t.Setenv(key, "")

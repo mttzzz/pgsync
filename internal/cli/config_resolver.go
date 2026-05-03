@@ -77,7 +77,10 @@ func (r Resolver) Resolve(ctx context.Context, flags FlagOverrides) (config.Conf
 func PlanOptionsFromConfig(cfg config.Config, db string, syncFlags SyncFlags) (engine.PlanOptions, error) {
 	database := strings.TrimSpace(db)
 	if database == "" {
-		database = cfg.Runtime.DefaultDatabase
+		database = strings.TrimSpace(cfg.Runtime.DefaultDatabase)
+	}
+	if database == "" {
+		database = strings.TrimSpace(cfg.Remote.Database)
 	}
 	opts := engine.PlanOptions{
 		Remote:            cfg.Remote,
@@ -201,6 +204,9 @@ func connectionHostsProvided(env map[string]string, flags FlagOverrides) bool {
 	remote := strings.TrimSpace(flags.Remote.Host)
 	if remote == "" {
 		remote = strings.TrimSpace(env["PGSYNC_REMOTE_HOST"])
+	}
+	if remote == "" {
+		remote = strings.TrimSpace(env["POSTGRES_URL"])
 	}
 	local := strings.TrimSpace(flags.Local.Host)
 	if local == "" {

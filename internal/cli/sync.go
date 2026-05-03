@@ -19,11 +19,15 @@ import (
 func newSyncCommand(app App, globals *globalFlags) *cobra.Command {
 	flags := SyncFlags{}
 	cmd := &cobra.Command{
-		Use:   "sync <db>",
+		Use:   "sync [db]",
 		Short: "Sync a remote PostgreSQL database to the local target",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSync(cmd.Context(), app, globals.overrides(cmd), flags, args[0])
+			database := ""
+			if len(args) > 0 {
+				database = args[0]
+			}
+			return runSync(cmd.Context(), app, globals.overrides(cmd), flags, database)
 		},
 	}
 	cmd.Flags().StringSliceVar(&flags.Tables, "tables", nil, "comma-separated table allow-list")

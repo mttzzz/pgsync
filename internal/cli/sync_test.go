@@ -84,6 +84,15 @@ func TestSyncYesPlansAndExecutes(t *testing.T) {
 	assert.Contains(t, out, "database=mydb")
 }
 
+func TestSyncCanUseDefaultDatabaseWhenArgumentOmitted(t *testing.T) {
+	t.Parallel()
+	fake := &fakeEngine{}
+	out, _, err := executeRoot(t, appWithEngine(fake), "--config", writeTestConfig(t, testConfig()), "sync", "--dry-run")
+	require.NoError(t, err)
+	assert.Equal(t, "fixture-db", fake.lastOptions.Database)
+	assert.Contains(t, out, "database=fixture-db")
+}
+
 func TestSyncDryRunPrintsPlanWithoutConfirmation(t *testing.T) {
 	t.Parallel()
 	fake := &fakeEngine{}
@@ -183,6 +192,7 @@ func TestSyncReturnsPlanOptionsError(t *testing.T) {
 	fake := &fakeEngine{}
 	cfg := testConfig()
 	cfg.Runtime.DefaultDatabase = ""
+	cfg.Remote.Database = ""
 	err := runSync(context.Background(), appWithEngine(fake), FlagOverrides{ConfigPath: writeTestConfig(t, cfg)}, SyncFlags{}, " ")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database is required")
