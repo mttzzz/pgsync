@@ -5,12 +5,13 @@ All notable changes to pgsync. Format: [Keep a Changelog](https://keepachangelog
 ## [Unreleased]
 
 ### Added — Phase 4: Embedded pg_tools, benchmarks, release pipeline, updater
-- `internal/engine/pgtools`: PostgreSQL tools manifest parser and embedded payload extraction/cache locator.
+- `internal/engine/pgtools`: PostgreSQL tools manifest parser, build-tagged embedded payloads, verified extraction cache, macOS signing hook, and embedded-by-default locator with system override.
 - `embed/pgtools-manifest.toml`: PostgreSQL 18 platform manifest scaffold.
-- `scripts/fetch-pgtools.sh`, `verify-pgtools.sh`, `sync-pgtools-embed.sh`: release-time pgtools staging helpers.
-- `internal/updater`: GitHub Releases update-check client.
-- Benchmark scaffold and release GitHub Actions workflow with checksums.
-- `Makefile` release/pgtools targets and Windows `build.ps1` helper.
+- `scripts/fetch-pgtools.sh`, `verify-pgtools.sh`, `sync-pgtools-embed.sh`, `package-release.sh`, `checksums.sh`: release-time pgtools staging and packaging helpers.
+- `internal/cli doctor`: pgtools mode/path/cache diagnostics in text and JSON output.
+- `internal/updater`: GitHub Releases update-check client and `pgsync upgrade` command.
+- Deterministic fixture generator, benchmark result model, benchmark scaffold, comparison CLI, and release GitHub Actions workflow with checksums.
+- `Makefile` release/pgtools/fixture/benchmark targets and Windows `build.ps1` helper.
 
 ### Added — Phase 3: TUI + ConfigEditor + agent output hardening
 - `internal/tui`: Bubble Tea app shell, state machine, key routing, queue model, screen contracts, responsive layout helpers, and style theme.

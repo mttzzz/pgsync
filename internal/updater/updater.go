@@ -2,7 +2,13 @@
 package updater
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +55,7 @@ type UpdateInfo struct {
 	LatestVersion  string
 	ReleaseURL     string
 	DownloadURL    string
+	ChecksumURL    string
 	AssetName      string
 	AssetSize      int64
 	Notes          string
@@ -139,12 +146,15 @@ func (c Client) Check(ctx context.Context, currentVersion string) (UpdateInfo, e
 	info.DownloadURL = asset.URL
 	info.AssetName = asset.Name
 	info.AssetSize = asset.Size
+	if checksum, err := FindChecksumAsset(release.Assets); err == nil {
+		info.ChecksumURL = checksum.URL
+	}
 	return info, nil
 }
 
 // Install downloads info's asset and atomically replaces the current executable.
 //
-//nolint:gocyclo // Self-update install is a linear sequence with error handling for each filesystem step.
+//nolint:gocyclo,gocognit // Self-update install is a linear sequence with error handling for each filesystem step.
 func (c Client) Install(ctx context.Context, info UpdateInfo) (UpdateResult, error) {
 	started := time.Now()
 	if info.DownloadURL == "" {
@@ -174,8 +184,25 @@ func (c Client) Install(ctx context.Context, info UpdateInfo) (UpdateResult, err
 			_ = os.Remove(tmpPath)
 		}
 	}()
-	if err := c.download(ctx, info.DownloadURL, tmp); err != nil {
+	assetData, err := c.downloadBytes(ctx, info.DownloadURL)
+	if err != nil {
 		return UpdateResult{}, err
+	}
+	if info.ChecksumURL != "" {
+		checksumData, err := c.downloadBytes(ctx, info.ChecksumURL)
+		if err != nil {
+			return UpdateResult{}, err
+		}
+		if err := verifyChecksum(info.AssetName, assetData, checksumData); err != nil {
+			return UpdateResult{}, err
+		}
+	}
+	binaryData, err := extractBinary(info.AssetName, assetData, runtime.GOOS)
+	if err != nil {
+		return UpdateResult{}, err
+	}
+	if _, err := tmp.Write(binaryData); err != nil {
+		return UpdateResult{}, fmt.Errorf("write update candidate: %w", err)
 	}
 	if err := tmp.Chmod(mode); err != nil {
 		return UpdateResult{}, fmt.Errorf("chmod temp executable: %w", err)
@@ -188,6 +215,14 @@ func (c Client) Install(ctx context.Context, info UpdateInfo) (UpdateResult, err
 	}
 	cleanup = false
 	return UpdateResult{PreviousVersion: info.CurrentVersion, NewVersion: info.LatestVersion, Path: exe, Duration: time.Since(started)}, nil
+}
+
+func (c Client) downloadBytes(ctx context.Context, url string) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := c.download(ctx, url, &buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (c Client) download(ctx context.Context, url string, w io.Writer) error {
@@ -216,7 +251,9 @@ func (c Client) download(ctx context.Context, url string, w io.Writer) error {
 func FindAsset(assets []Asset, goos, goarch string) (Asset, error) {
 	want := "pgsync-" + goos + "-" + goarch
 	if goos == "windows" {
-		want += ".exe"
+		want += ".zip"
+	} else {
+		want += ".tar.gz"
 	}
 	for _, asset := range assets {
 		if asset.Name == want {
@@ -224,6 +261,91 @@ func FindAsset(assets []Asset, goos, goarch string) (Asset, error) {
 		}
 	}
 	return Asset{}, fmt.Errorf("asset %q not found", want)
+}
+
+// FindChecksumAsset returns the checksums.txt release asset.
+func FindChecksumAsset(assets []Asset) (Asset, error) {
+	for _, asset := range assets {
+		if asset.Name == "checksums.txt" {
+			return asset, nil
+		}
+	}
+	return Asset{}, fmt.Errorf("asset %q not found", "checksums.txt")
+}
+
+func verifyChecksum(assetName string, data, checksums []byte) error {
+	sum := sha256.Sum256(data)
+	got := hex.EncodeToString(sum[:])
+	for _, line := range strings.Split(string(checksums), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && filepath.Base(fields[1]) == assetName {
+			if strings.EqualFold(fields[0], got) {
+				return nil
+			}
+			return fmt.Errorf("checksum mismatch for %s", assetName)
+		}
+	}
+	return fmt.Errorf("checksum for %s not found", assetName)
+}
+
+//nolint:gocognit,gocyclo // Archive extraction validates zip and tar.gz formats with path traversal checks.
+func extractBinary(assetName string, data []byte, goos string) ([]byte, error) {
+	bin := "pgsync"
+	if goos == "windows" {
+		bin = "pgsync.exe"
+	}
+	if strings.HasSuffix(assetName, ".zip") {
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return nil, fmt.Errorf("open update zip: %w", err)
+		}
+		for _, file := range zr.File {
+			if unsafeArchiveName(file.Name) {
+				return nil, fmt.Errorf("unsafe archive path %q", file.Name)
+			}
+			if filepath.Base(file.Name) != bin {
+				continue
+			}
+			r, err := file.Open()
+			if err != nil {
+				return nil, fmt.Errorf("open update binary: %w", err)
+			}
+			defer func() { _ = r.Close() }()
+			return io.ReadAll(r)
+		}
+		return nil, fmt.Errorf("update binary %s not found in %s", bin, assetName)
+	}
+	if strings.HasSuffix(assetName, ".tar.gz") || strings.HasSuffix(assetName, ".tgz") {
+		gz, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("open update tar.gz: %w", err)
+		}
+		defer func() { _ = gz.Close() }()
+		tr := tar.NewReader(gz)
+		for {
+			header, err := tr.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("read update tar.gz: %w", err)
+			}
+			if unsafeArchiveName(header.Name) {
+				return nil, fmt.Errorf("unsafe archive path %q", header.Name)
+			}
+			if filepath.Base(header.Name) != bin {
+				continue
+			}
+			return io.ReadAll(tr)
+		}
+		return nil, fmt.Errorf("update binary %s not found in %s", bin, assetName)
+	}
+	return data, nil
+}
+
+func unsafeArchiveName(name string) bool {
+	clean := filepath.Clean(name)
+	return filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator))
 }
 
 // IsNewer reports whether candidate is semantically newer than current.

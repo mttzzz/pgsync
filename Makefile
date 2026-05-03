@@ -1,8 +1,12 @@
-.PHONY: help build build-all test test-unit test-race test-integration test-all test-coverage coverage-gate \
-        lint fmt deps deps-update pgtools-fetch pgtools-verify pgtools-sync bench clean
+.PHONY: help build build-all package checksums release-local test test-unit test-race test-integration test-all test-coverage coverage-gate \
+        lint fmt deps deps-update pgtools-fetch pgtools-fetch-all pgtools-verify pgtools-sync pgtools-sync-embed pgtools-prepare-release fixture-tiny fixture-medium fixture-large fixture-small fixtures bench bench-ci bench-large bench-compare clean
 
 BINARY := pgsync
 BUILD_DIR := bin
+VERSION ?= dev
+PLATFORM ?= linux-amd64
+BASELINE ?= benchmarks/results/main
+CANDIDATE ?= benchmarks/results/local
 GO_FILES := $(shell find . -name '*.go' -not -path './vendor/*' -not -path './embed/*')
 
 help:
@@ -15,10 +19,18 @@ build: ## Build the binary
 
 build-all: ## Build release binaries for common platforms
 	@mkdir -p dist
-	GOOS=linux GOARCH=amd64 go build -o dist/$(BINARY)-linux-amd64 ./cmd/pgsync
-	GOOS=darwin GOARCH=amd64 go build -o dist/$(BINARY)-darwin-amd64 ./cmd/pgsync
-	GOOS=darwin GOARCH=arm64 go build -o dist/$(BINARY)-darwin-arm64 ./cmd/pgsync
-	GOOS=windows GOARCH=amd64 go build -o dist/$(BINARY)-windows-amd64.exe ./cmd/pgsync
+	GOOS=linux GOARCH=amd64 go build -ldflags "-X github.com/mttzzz/pgsync/internal/version.Version=$(VERSION)" -o dist/$(BINARY)-linux-amd64 ./cmd/pgsync
+	GOOS=darwin GOARCH=amd64 go build -ldflags "-X github.com/mttzzz/pgsync/internal/version.Version=$(VERSION)" -o dist/$(BINARY)-darwin-amd64 ./cmd/pgsync
+	GOOS=darwin GOARCH=arm64 go build -ldflags "-X github.com/mttzzz/pgsync/internal/version.Version=$(VERSION)" -o dist/$(BINARY)-darwin-arm64 ./cmd/pgsync
+	GOOS=windows GOARCH=amd64 go build -ldflags "-X github.com/mttzzz/pgsync/internal/version.Version=$(VERSION)" -o dist/$(BINARY)-windows-amd64.exe ./cmd/pgsync
+
+package: ## Build packaged release archives; requires embedded pgtools payloads
+	bash scripts/package-release.sh --version $(VERSION)
+
+checksums: ## Generate release checksums
+	bash scripts/checksums.sh --dist dist
+
+release-local: test pgtools-prepare-release package checksums ## Run local release workflow
 
 test: test-unit ## Run ordinary unit tests with coverage
 
@@ -54,17 +66,47 @@ deps-update: ## Update deps
 	go get -u ./...
 	go mod tidy
 
-pgtools-fetch: ## Fetch pgtools payloads into embed/bin
-	bash scripts/fetch-pgtools.sh --all
+pgtools-fetch: ## Fetch one pgtools payload into embed/bin; set PLATFORM=linux-amd64
+	python scripts/fetch-pgtools-conda.py --platform $(PLATFORM)
+
+pgtools-fetch-all: ## Fetch all pgtools payloads into embed/bin
+	python scripts/fetch-pgtools-conda.py --all
 
 pgtools-verify: ## Verify pgtools payloads
 	bash scripts/verify-pgtools.sh embed/bin
 
-pgtools-sync: ## Mirror pgtools payloads into package embed tree
+pgtools-sync pgtools-sync-embed: ## Mirror pgtools payloads into package embed tree
 	bash scripts/sync-pgtools-embed.sh
 
+pgtools-prepare-release: pgtools-fetch-all pgtools-verify pgtools-sync-embed ## Fetch, verify, and sync pgtools for release builds
+
+fixture-tiny: ## Generate tiny deterministic fixture
+	go run ./fixtures/genfixture --size=tiny --seed=42 --out=fixtures/tiny.sql.gz
+
+fixture-medium: ## Generate medium deterministic fixture
+	go run ./fixtures/genfixture --size=medium --seed=42 --out=fixtures/medium.sql.gz
+
+fixture-large: ## Generate large deterministic fixture
+	go run ./fixtures/genfixture --size=large --seed=42 --out=fixtures/large.sql.gz
+
+fixture-small: ## Download public small fixture
+	bash fixtures/download-dvdrental.sh
+
+fixtures: fixture-tiny ## Generate default fixtures
+	@echo "Run make fixture-medium or make fixture-large for heavier benchmark fixtures."
+
 bench: ## Run benchmarks
-	go test -bench=. -benchmem -run=^$$ ./benchmarks/...
+	PGSYNC_BENCH_FIXTURES=tiny,small go test -bench=. -benchmem -run=^$$ ./benchmarks/...
+
+bench-ci: ## Run CI benchmark set
+	PGSYNC_BENCH_FIXTURES=tiny,small,medium go test -bench=. -benchmem -run=^$$ ./benchmarks/...
+	$(MAKE) bench-compare CANDIDATE=$(CANDIDATE)
+
+bench-large: ## Run large benchmark only
+	PGSYNC_BENCH_FIXTURES=large go test -bench=. -benchmem -run=^$$ ./benchmarks/...
+
+bench-compare: ## Compare benchmark JSON results
+	go run ./benchmarks/compare.go --baseline $(BASELINE) --candidate $(CANDIDATE) --threshold 0.15
 
 clean:
 	rm -rf $(BUILD_DIR) coverage.out coverage.html

@@ -16,7 +16,7 @@ func preparePlanOptions(opts *engine.PlanOptions, logger *slog.Logger) error {
 	if err := selectPhase2Mode(opts); err != nil {
 		return err
 	}
-	warnSystemPgtools(opts.UseSystemPgtools, logger)
+	logPgtoolsMode(opts.UseSystemPgtools, logger)
 	return nil
 }
 
@@ -34,9 +34,13 @@ func selectPhase2Mode(opts *engine.PlanOptions) error {
 	}
 }
 
-func warnSystemPgtools(useSystem bool, logger *slog.Logger) {
-	if useSystem || logger == nil {
+func logPgtoolsMode(useSystem bool, logger *slog.Logger) {
+	if logger == nil {
 		return
 	}
-	logger.Warn("embedded PostgreSQL tools are not available in Phase 2; using system pg_dump/pg_restore")
+	if useSystem {
+		logger.Debug("using system PostgreSQL tools from PATH")
+		return
+	}
+	logger.Debug("using embedded PostgreSQL tools")
 }

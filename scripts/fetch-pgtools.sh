@@ -1,29 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MANIFEST="embed/pgtools-manifest.toml"
-OUT="embed/bin"
 PLATFORM=""
 ALL=0
+VERSION="18.3"
+OUT="embed/bin"
+EMBED_OUT="internal/engine/pgtools/bin"
 
-while [[ $# -gt 0 ]]; do
+usage() {
+  cat <<'USAGE'
+Usage: scripts/fetch-pgtools.sh [--version 18.3] [--out DIR] [--embed-out DIR] (--platform NAME | --all)
+
+Fetches PostgreSQL client tools and runtime libraries from conda-forge, then
+stages them both in embed/bin/<platform>/ and internal/engine/pgtools/bin/<platform>/.
+USAGE
+}
+
+fail() { echo "fetch-pgtools: $*" >&2; exit 2; }
+
+while [ $# -gt 0 ]; do
   case "$1" in
-    --manifest) MANIFEST="$2"; shift 2 ;;
-    --out) OUT="$2"; shift 2 ;;
-    --platform) PLATFORM="$2"; shift 2 ;;
+    --platform) [ $# -ge 2 ] || fail "--platform requires a value"; PLATFORM="$2"; shift 2 ;;
     --all) ALL=1; shift ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
+    --version) [ $# -ge 2 ] || fail "--version requires a value"; VERSION="$2"; shift 2 ;;
+    --out) [ $# -ge 2 ] || fail "--out requires a value"; OUT="$2"; shift 2 ;;
+    --embed-out) [ $# -ge 2 ] || fail "--embed-out requires a value"; EMBED_OUT="$2"; shift 2 ;;
+    --manifest) [ $# -ge 2 ] || fail "--manifest requires a value"; shift 2 ;; # accepted for backward-compatible no-op
+    --help|-h) usage; exit 0 ;;
+    *) fail "unknown arg: $1" ;;
   esac
 done
 
-command -v curl >/dev/null || { echo "curl is required" >&2; exit 2; }
-command -v tar >/dev/null || { echo "tar is required" >&2; exit 2; }
-
-if [[ $ALL -ne 1 && -z "$PLATFORM" ]]; then
-  echo "pass --platform <name> or --all" >&2
-  exit 2
+if [ "$ALL" -eq 1 ]; then
+  python scripts/fetch-pgtools-conda.py --all --version "$VERSION" --out "$OUT" --embed-out "$EMBED_OUT"
+else
+  [ -n "$PLATFORM" ] || fail "pass --platform <name> or --all"
+  python scripts/fetch-pgtools-conda.py --platform "$PLATFORM" --version "$VERSION" --out "$OUT" --embed-out "$EMBED_OUT"
 fi
-
-echo "fetch-pgtools: manifest=$MANIFEST out=$OUT platform=${PLATFORM:-all}"
-echo "This MVP script validates tooling and staging layout; replace placeholder URLs/SHA values before release."
-mkdir -p "$OUT"

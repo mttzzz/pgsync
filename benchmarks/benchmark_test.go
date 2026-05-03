@@ -1,3 +1,4 @@
+// Package benchmarks contains benchmark harnesses and result helpers.
 package benchmarks
 
 import "testing"

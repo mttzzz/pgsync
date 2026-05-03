@@ -40,7 +40,7 @@ func TestPreparePlanOptionsRejectsExternalAndInvalidOptions(t *testing.T) {
 	assert.Contains(t, err.Error(), "database is required")
 }
 
-func TestPreparePlanOptionsAllowsNativeAndWarnsWhenSystemPgtoolsDisabled(t *testing.T) {
+func TestPreparePlanOptionsAllowsNativeAndLogsEmbeddedPgtoolsDefault(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -52,7 +52,7 @@ func TestPreparePlanOptionsAllowsNativeAndWarnsWhenSystemPgtoolsDisabled(t *test
 
 	require.NoError(t, err)
 	assert.Equal(t, engine.ModeNative, opts.Mode)
-	assert.Contains(t, logs.String(), "using system pg_dump/pg_restore")
+	assert.Contains(t, logs.String(), "using embedded PostgreSQL tools")
 }
 
 func TestSelectPhase2ModeDefaultReturnsNilForAlreadyValidatedModes(t *testing.T) {
@@ -66,14 +66,14 @@ func TestSelectPhase2ModeDefaultReturnsNilForAlreadyValidatedModes(t *testing.T)
 	assert.Equal(t, engine.Mode("future"), opts.Mode)
 }
 
-func TestWarnSystemPgtoolsReturnsWhenLoggerMissingOrSystemToolsEnabled(t *testing.T) {
+func TestLogPgtoolsModeReturnsWhenLoggerMissingAndLogsSystemMode(t *testing.T) {
 	t.Parallel()
-	warnSystemPgtools(false, nil)
+	logPgtoolsMode(false, nil)
 
 	var logs bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	warnSystemPgtools(true, logger)
-	assert.Empty(t, logs.String())
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logPgtoolsMode(true, logger)
+	assert.Contains(t, logs.String(), "using system PostgreSQL tools from PATH")
 }
 
 func TestNewRequiresExplicitCoreDependencies(t *testing.T) {

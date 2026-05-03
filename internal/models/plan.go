@@ -8,14 +8,15 @@ import (
 
 /* SyncPlan is the immutable plan consumed by a sync engine. */
 type SyncPlan struct {
-	Database  string
-	Tables    []Table
-	Sequences []Sequence
-	DryRun    bool
-	Threads   int
-	Engine    string
-	Remote    config.Connection
-	Local     config.Connection
+	Database         string
+	Tables           []Table
+	Sequences        []Sequence
+	DryRun           bool
+	Threads          int
+	Engine           string
+	Remote           config.Connection
+	Local            config.Connection
+	UseSystemPgtools bool
 }
 
 /* IsEmpty reports whether the plan has no selected database. */

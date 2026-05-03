@@ -13,7 +13,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -24,24 +24,29 @@ jobs:
           go-version: '1.25'
       - name: Test
         run: go test ./...
-      - name: Build release artifacts
+      - name: Benchmark smoke
+        run: make bench
+      - name: Install pgtools fetch dependencies
+        run: python -m pip install zstandard
+      - name: Prepare embedded pgtools
+        run: make pgtools-prepare-release
+      - name: Package release artifacts
+        run: make package VERSION=${GITHUB_REF_NAME}
+      - name: Generate checksums
+        run: make checksums
+      - name: Verify artifact set
         run: |
-          mkdir -p dist
-          version="${GITHUB_REF_NAME#v}"
-          commit="$(git rev-parse --short HEAD)"
-          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          ldflags="-X github.com/mttzzz/pgsync/internal/version.Version=$version -X github.com/mttzzz/pgsync/internal/version.GitCommit=$commit -X github.com/mttzzz/pgsync/internal/version.BuildDate=$date"
-          GOOS=linux GOARCH=amd64 go build -ldflags "$ldflags" -o dist/pgsync-linux-amd64 ./cmd/pgsync
-          GOOS=darwin GOARCH=amd64 go build -ldflags "$ldflags" -o dist/pgsync-darwin-amd64 ./cmd/pgsync
-          GOOS=darwin GOARCH=arm64 go build -ldflags "$ldflags" -o dist/pgsync-darwin-arm64 ./cmd/pgsync
-          GOOS=windows GOARCH=amd64 go build -ldflags "$ldflags" -o dist/pgsync-windows-amd64.exe ./cmd/pgsync
-      - name: Checksums
-        run: cd dist && sha256sum * > SHA256SUMS
+          test -f dist/pgsync-windows-amd64.zip
+          test -f dist/pgsync-darwin-arm64.tar.gz
+          test -f dist/pgsync-darwin-amd64.tar.gz
+          test -f dist/pgsync-linux-amd64.tar.gz
+          test -f dist/checksums.txt
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist
       - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes "Automated pgsync release $GITHUB_REF_NAME"
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file CHANGELOG.md

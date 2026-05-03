@@ -1,6 +1,9 @@
 # Binaries
 bin/
 dist/
+!internal/engine/pgtools/bin/
+!internal/engine/pgtools/bin/*/
+!internal/engine/pgtools/bin/*/.gitkeep
 *.exe
 *.test
 *.out
@@ -8,6 +11,10 @@ dist/
 # Go
 vendor/
 go.work.sum
+
+# Python
+__pycache__/
+*.pyc
 
 # IDE
 .vscode/*
@@ -32,6 +39,8 @@ coverage.html
 
 # Embedded pg_tools (downloaded by scripts/fetch-pgtools.sh, not committed)
 embed/bin/*/
+internal/engine/pgtools/bin/*/*
+!internal/engine/pgtools/bin/*/.gitkeep
 
 # Plans/specs are committed
 !docs/superpowers/specs/

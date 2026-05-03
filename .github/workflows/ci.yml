@@ -79,6 +79,31 @@ jobs:
       - name: Run coverage gate
         run: bash scripts/coverage-gate.sh coverage.out coverage.allow
 
+  bench-regression:
+    runs-on: ubuntu-latest
+    needs: test-unit
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+      - name: Benchmark smoke
+        run: |
+          mkdir -p benchmarks/results/local
+          make bench
+      - name: Compare benchmarks when baselines exist
+        run: |
+          if [ -d benchmarks/results/main ]; then
+            make bench-compare CANDIDATE=benchmarks/results/local
+          else
+            echo "No committed benchmark baseline yet; skipping regression compare."
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: benchmark-results
+          path: benchmarks/results/local
+
   test-integration:
     runs-on: ubuntu-latest
     steps:

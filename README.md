@@ -26,12 +26,15 @@ Config is managed by `pgsync config` and the TUI; the TOML file is internal stor
 
 ## CLI sync usage
 
-Phase 2/3 sync can use system `pg_dump` / PostgreSQL client tools in `PATH`; Phase 4 adds embedded pgtools manifest/extraction scaffolding for release builds.
+Release builds use embedded PostgreSQL 18 client tools by default. `--use-system-pgtools` is an explicit escape hatch when you want `pg_dump` / `pg_restore` from `PATH` instead.
 
 ```bash
-pgsync --config ~/.config/pgsync/config.toml sync my_database --yes --threads=8 --use-system-pgtools
+pgsync --config ~/.config/pgsync/config.toml sync my_database --yes --threads=8
+pgsync --config ~/.config/pgsync/config.toml sync my_database --yes --use-system-pgtools
 pgsync --config ./ci-pgsync.toml --output=json sync my_database --yes  # NDJSON
 pgsync sync my_database --tables users,orders --dry-run
+pgsync doctor --output=json
+pgsync upgrade --check-only
 ```
 
 ## Build / dev
@@ -41,15 +44,20 @@ make help             # list targets
 make test             # unit tests with coverage
 make coverage-gate
 make lint
-make test-integration # requires Docker, pg_dump, and cgo/toolchain for -race
+make test-integration # requires Docker and cgo/toolchain for -race
 make build
+make pgtools-prepare-release # stage verified embedded PostgreSQL tools
+make release-local VERSION=v0.0.0-dev
+make bench
 ```
+
+For release packaging, platform payloads are fetched from conda-forge PostgreSQL packages into `internal/engine/pgtools/bin/<platform>/`; packaging fails if `pg_dump` / `pg_restore` are missing.
 
 ## CI and releases
 
 Every push runs build, lint, unit, race, coverage-gate, and integration jobs through GitHub Actions. After CI passes on `main`, `.github/workflows/version-bump.yml` computes the next semantic version, updates `VERSION`, creates a `vX.Y.Z` tag, and pushes it. Tags trigger `.github/workflows/release.yml`, which builds release artifacts with version metadata and publishes a GitHub Release.
 
-See `docs/versioning.md` for bump rules.
+See `docs/release.md` for the release checklist and `docs/versioning.md` for bump rules.
 
 ## License
 

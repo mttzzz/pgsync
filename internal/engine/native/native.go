@@ -75,7 +75,7 @@ func NewDefault(logger *slog.Logger) (*NativeEngine, error) {
 	return New(Dependencies{
 		Connector: pgdb.NewConnector(),
 		Runner:    runner.NewExec(),
-		Locator:   pgtools.NewSystemLocator(pgtools.ExecLooker{}),
+		Locator:   pgtools.NewLocator(pgtools.LocatorOptions{Logger: logger}),
 		Clock:     clockpkg.NewSystem(),
 		Logger:    logger,
 	})
@@ -89,6 +89,7 @@ func (e *NativeEngine) Plan(ctx context.Context, opts engine.PlanOptions) (plan 
 	if err := preparePlanOptions(&opts, e.deps.Logger); err != nil {
 		return nil, err
 	}
+	configureLocatorMode(e.deps.Locator, opts.UseSystemPgtools)
 
 	endpoint := pgdb.EndpointFromConfig(opts.Remote, opts.Database)
 	conn, err := e.deps.Connector.Connect(ctx, endpoint)
@@ -116,14 +117,15 @@ func (e *NativeEngine) Plan(ctx context.Context, opts engine.PlanOptions) (plan 
 	}
 
 	return &models.SyncPlan{
-		Database:  opts.Database,
-		Tables:    ordered,
-		Sequences: sequencesForTables(sequences, ordered),
-		DryRun:    opts.DryRun,
-		Threads:   opts.Threads,
-		Engine:    string(engine.ModeNative),
-		Remote:    opts.Remote,
-		Local:     opts.Local,
+		Database:         opts.Database,
+		Tables:           ordered,
+		Sequences:        sequencesForTables(sequences, ordered),
+		DryRun:           opts.DryRun,
+		Threads:          opts.Threads,
+		Engine:           string(engine.ModeNative),
+		Remote:           opts.Remote,
+		Local:            opts.Local,
+		UseSystemPgtools: opts.UseSystemPgtools,
 	}, nil
 }
 
@@ -139,9 +141,16 @@ func (e *NativeEngine) Execute(
 	if err := validateExecutePlan(plan); err != nil {
 		return nil, err
 	}
+	configureLocatorMode(e.deps.Locator, plan.UseSystemPgtools)
 
 	run := newExecutionRun(ctx, e, plan, observer)
 	return run.execute()
+}
+
+func configureLocatorMode(locator pgtools.Locator, useSystem bool) {
+	if configurable, ok := locator.(interface{ SetUseSystem(bool) }); ok {
+		configurable.SetUseSystem(useSystem)
+	}
 }
 
 func validateDependencies(deps Dependencies) error {

@@ -15,7 +15,7 @@ import (
 
 func TestLatest(t *testing.T) {
 	t.Parallel()
-	doer := &fakeDoer{resp: &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3","html_url":"https://example","assets":[{"name":"pgsync-darwin-arm64","browser_download_url":"https://download","size":42}]}`))}}
+	doer := &fakeDoer{resp: &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3","html_url":"https://example","assets":[{"name":"pgsync-darwin-arm64.tar.gz","browser_download_url":"https://download","size":42}]}`))}}
 	client := Client{RepoURL: "https://api.github.com/repos/o/r/", Doer: doer}
 	rel, err := client.Latest(context.Background())
 	require.NoError(t, err)
@@ -44,15 +44,18 @@ func TestCheckFindAssetVersionAndDiscardHelpers(t *testing.T) {
 	t.Parallel()
 	assetName := "pgsync-" + runtime.GOOS + "-" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
-		assetName += ".exe"
+		assetName += ".zip"
+	} else {
+		assetName += ".tar.gz"
 	}
-	doer := &fakeDoer{resp: &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3","html_url":"https://example","assets":[{"name":"` + assetName + `","browser_download_url":"https://download","size":42}]}`))}}
+	doer := &fakeDoer{resp: &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3","html_url":"https://example","assets":[{"name":"` + assetName + `","browser_download_url":"https://download","size":42},{"name":"checksums.txt","browser_download_url":"https://checksums","size":100}]}`))}}
 	info, err := (Client{RepoURL: "https://api.github.com/repos/o/r", Doer: doer}).Check(context.Background(), "v1.2.2")
 	require.NoError(t, err)
 	assert.True(t, info.Available)
 	assert.Equal(t, "https://download", info.DownloadURL)
+	assert.Equal(t, "https://checksums", info.ChecksumURL)
 
-	asset, err := FindAsset([]Asset{{Name: "pgsync-windows-amd64.exe", URL: "u"}}, "windows", "amd64")
+	asset, err := FindAsset([]Asset{{Name: "pgsync-windows-amd64.zip", URL: "u"}}, "windows", "amd64")
 	require.NoError(t, err)
 	assert.Equal(t, "u", asset.URL)
 	_, err = FindAsset(nil, "darwin", "arm64")
