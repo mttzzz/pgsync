@@ -5,6 +5,12 @@
 github.com/mttzzz/pgsync/cmd/pgsync
 github.com/mttzzz/pgsync/internal/version
 github.com/mttzzz/pgsync/internal/engine/pgtools/embed_
+github.com/mttzzz/pgsync/internal/engine/pgtools/embed.go
+github.com/mttzzz/pgsync/internal/engine/pgtools/extract.go
+github.com/mttzzz/pgsync/internal/engine/pgtools/locate.go
+github.com/mttzzz/pgsync/internal/engine/pgtools/signer.go
+github.com/mttzzz/pgsync/internal/cli/diagnostics.go
+configureLocatorMode
 github.com/mttzzz/pgsync/internal/cli/config.go
 github.com/mttzzz/pgsync/internal/cli/update.go
 github.com/mttzzz/pgsync/internal/engine/native/schema.go
