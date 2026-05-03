@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	zone "github.com/lrstanley/bubblezone"
 
 	"github.com/mttzzz/pgsync/internal/config"
 	"github.com/mttzzz/pgsync/internal/engine"
@@ -32,8 +34,10 @@ type State struct {
 	TablesErr         error
 	Result            *models.SyncResult
 	ProgressEvent     engine.Event
+	Progress          LiveProgress
 	ProgressEvents    <-chan engine.Event
 	SyncDone          <-chan SyncFinishedMsg
+	ActiveTab         int
 	Width             int
 	Height            int
 }
@@ -87,14 +91,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case syncStartedMsg:
 		a.state.ProgressEvents = m.events
 		a.state.SyncDone = m.done
-		return a, waitSyncProgressCmd(m.events, m.done)
+		return a, tea.Batch(waitSyncProgressCmd(m.events, m.done), progressTickCmd())
 	case syncProgressMsg:
 		a.state.ProgressEvent = m.Event
+		a.state.Progress.Apply(m.Event, time.Now())
 		a.state.Status = progressStatus(m.Event)
 		return a, waitSyncProgressCmd(a.state.ProgressEvents, a.state.SyncDone)
+	case progressTickMsg:
+		if a.state.Running && a.state.Current == screens.ProgressID {
+			a.state.Progress.Tick(m.Time)
+			return a, progressTickCmd()
+		}
+		return a, nil
 	case SyncFinishedMsg:
 		a.state.Running = false
 		a.state.Current = screens.ResultID
+		a.state.ActiveTab = 0
 		a.state.Err = m.Err
 		a.state.Result = m.Result
 		if m.Result != nil {
@@ -103,6 +115,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case tea.KeyMsg:
 		return a.onKey(m)
+	case tea.MouseMsg:
+		return a.onMouse(m)
 	default:
 		return a, nil
 	}
@@ -112,7 +126,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a App) View() string {
 	body := a.screenBody()
 	if isStyledScreen(a.state.Current) {
-		return body
+		return zone.Scan(body)
 	}
 	if a.state.Status != "" {
 		body += "\n\n" + a.state.Status
@@ -120,7 +134,7 @@ func (a App) View() string {
 	if a.state.Err != nil {
 		body += "\nОшибка: " + a.state.Err.Error()
 	}
-	return body
+	return zone.Scan(body)
 }
 
 func (a App) screenBody() string {
@@ -130,15 +144,18 @@ func (a App) screenBody() string {
 	case screens.MainMenuID:
 		return screens.MainMenu(a.state.MenuIndex).View()
 	case screens.DatabaseListID:
-		return screens.DatabaseList(a.state.Databases, a.state.Err, screens.DatabaseListOptions{SelectedIndex: a.state.DatabaseIndex, Checked: a.state.SelectedDatabases, Width: a.state.Width, Height: a.state.Height, Status: a.state.Status}).View()
+		return screens.DatabaseList(a.state.Databases, a.state.Err, screens.DatabaseListOptions{SelectedIndex: a.state.DatabaseIndex, Checked: a.state.SelectedDatabases, Width: a.state.Width, Height: a.state.Height, Status: a.state.Status, Config: a.state.Config}).View()
 	case screens.TablesPickID:
-		return screens.TablesPick(a.state.Tables, screens.TableListOptions{Database: a.state.Config.Runtime.DefaultDatabase, SelectedIndex: a.state.TableIndex, Checked: a.state.SelectedTables, Loading: a.state.TablesLoading, Err: a.state.TablesErr, Width: a.state.Width, Height: a.state.Height, Status: a.state.Status}).View()
+		return screens.TablesPick(a.state.Tables, screens.TableListOptions{Database: a.state.Config.Runtime.DefaultDatabase, SelectedIndex: a.state.TableIndex, Checked: a.state.SelectedTables, Loading: a.state.TablesLoading, Err: a.state.TablesErr, Width: a.state.Width, Height: a.state.Height, Status: a.state.Status, Config: a.state.Config}).View()
 	case screens.ConfirmPlanID:
-		return screens.ConfirmPlan(a.currentPlan()).View()
+		return screens.ConfirmPlan(a.currentPlan(), screens.HeaderOptions{Config: a.state.Config, Database: a.state.Config.Runtime.DefaultDatabase, Width: a.state.Width, Height: a.state.Height}).View()
 	case screens.ProgressID:
-		return screens.Progress(progressStage(a.state.ProgressEvent), a.state.ProgressEvent.Percent).View()
+		snapshot := a.state.Progress.Snapshot(a.state.Config, a.state.Width)
+		snapshot.Header.Height = a.state.Height
+		snapshot.Tab = a.state.ActiveTab
+		return screens.ProgressDashboard(snapshot).View()
 	case screens.ResultID:
-		return screens.Result(a.state.Result).View()
+		return screens.Result(a.state.Result, screens.ResultOptions{Header: screens.HeaderOptions{Config: a.state.Config, Database: a.state.Config.Runtime.DefaultDatabase, Width: a.state.Width, Height: a.state.Height}, Tab: a.state.ActiveTab, Tables: a.state.Progress.TableResults}).View()
 	default:
 		return fmt.Sprintf("Экран: %s", a.state.Current)
 	}
@@ -375,8 +392,12 @@ func (a App) onConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", "y":
 		a.state.Current = screens.ProgressID
 		a.state.Running = true
+		a.state.ActiveTab = 0
 		a.state.Status = "Sync queued"
-		a.state.ProgressEvent = engine.Event{Name: engine.EventSyncStart, Stage: "planning", Database: a.state.Config.Runtime.DefaultDatabase}
+		now := time.Now()
+		a.state.Progress = NewLiveProgress(a.currentPlan(), now)
+		a.state.ProgressEvent = engine.Event{Name: engine.EventSyncStart, Stage: "planning", Database: a.state.Config.Runtime.DefaultDatabase, Time: now, Tables: len(a.currentPlanTables()), Engine: a.state.Config.Runtime.Engine}
+		a.state.Progress.Apply(a.state.ProgressEvent, now)
 		return a, a.startSyncCmd()
 	case "q", "ctrl+c":
 		a.state.Quit = true
@@ -387,6 +408,10 @@ func (a App) onConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (a App) onProgressKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "tab", "right", "l":
+		a.state.ActiveTab = (a.state.ActiveTab + 1) % 2
+	case "shift+tab", "left", "h":
+		a.state.ActiveTab = (a.state.ActiveTab + 1) % 2
 	case "q", "ctrl+c":
 		a.state.Quit = true
 		return a, tea.Quit
@@ -396,6 +421,10 @@ func (a App) onProgressKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (a App) onResultKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "tab", "right", "l":
+		a.state.ActiveTab = (a.state.ActiveTab + 1) % 3
+	case "shift+tab", "left", "h":
+		a.state.ActiveTab = (a.state.ActiveTab + 2) % 3
 	case "enter", "q", "esc", "ctrl+c":
 		a.state.Quit = true
 		return a, tea.Quit
@@ -589,7 +618,7 @@ func (a App) currentPlan() *models.SyncPlan {
 			}
 		}
 	}
-	return &models.SyncPlan{Database: database, Tables: selectedTables, Threads: a.state.Config.Runtime.Threads, Engine: a.state.Config.Runtime.Engine, Remote: a.state.Config.Remote, Local: a.state.Config.Local}
+	return &models.SyncPlan{Database: database, Tables: selectedTables, Threads: a.state.Config.Runtime.Threads, Engine: a.state.Config.Runtime.Engine, Remote: a.state.Config.Remote, Local: a.state.Config.Local, UseSystemPgtools: a.state.Config.Runtime.UseSystemPgtools}
 }
 
 func tableKey(table models.Table) string {

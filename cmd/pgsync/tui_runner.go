@@ -74,7 +74,7 @@ func runInteractiveTUI(ctx context.Context, mode cli.TUIMode, configPath string)
 
 	services := productionTUIServices(cfg)
 	for {
-		program := tea.NewProgram(tui.NewAppWithServices(cfg, services), tea.WithAltScreen())
+		program := tea.NewProgram(tui.NewAppWithServices(cfg, services), tea.WithAltScreen(), tea.WithMouseCellMotion())
 		model, err := program.Run()
 		if err != nil {
 			return err

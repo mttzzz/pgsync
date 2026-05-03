@@ -1,7 +1,10 @@
 // Package screens contains pure TUI screen models.
 package screens
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	zone "github.com/lrstanley/bubblezone"
+)
 
 // ID identifies a screen in the app state machine.
 type ID string
@@ -50,7 +53,7 @@ func (s StaticScreen) Init() tea.Cmd { return nil }
 func (s StaticScreen) Update(tea.Msg) (Screen, tea.Cmd) { return s, nil }
 
 // View renders the body.
-func (s StaticScreen) View() string { return s.Body }
+func (s StaticScreen) View() string { return zone.Scan(s.Body) }
 
 // ID returns the screen ID.
 func (s StaticScreen) ID() ID { return s.ScreenID }
