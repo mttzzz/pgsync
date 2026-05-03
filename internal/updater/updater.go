@@ -27,6 +27,8 @@ const (
 	// DefaultRepoAPIURL is the GitHub API repository endpoint used by production updates.
 	DefaultRepoAPIURL = "https://api.github.com/repos/mttzzz/pgsync"
 	httpTimeout       = 30 * time.Second
+	downloadAttempts  = 3
+	downloadRetryWait = 500 * time.Millisecond
 )
 
 // HTTPDoer is the HTTP seam for update checks.
@@ -279,11 +281,22 @@ func windowsReplaceScript(scriptPath, candidate, target, backup string) string {
 }
 
 func (c Client) downloadBytes(ctx context.Context, url string) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := c.download(ctx, url, &buf); err != nil {
-		return nil, err
+	var lastErr error
+	for attempt := 1; attempt <= downloadAttempts; attempt++ {
+		var buf bytes.Buffer
+		err := c.download(ctx, url, &buf)
+		if err == nil {
+			return buf.Bytes(), nil
+		}
+		lastErr = err
+		if !retryDownload(err) || attempt == downloadAttempts {
+			break
+		}
+		if waitErr := waitDownloadRetry(ctx); waitErr != nil {
+			return nil, waitErr
+		}
 	}
-	return buf.Bytes(), nil
+	return nil, lastErr
 }
 
 func (c Client) download(ctx context.Context, url string, w io.Writer) error {
@@ -296,16 +309,45 @@ func (c Client) download(ctx context.Context, url string, w io.Writer) error {
 	}
 	resp, err := c.Doer.Do(req)
 	if err != nil {
-		return fmt.Errorf("download update: %w", err)
+		return &downloadError{err: fmt.Errorf("download update: %w", err), retryable: true}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download update: %s", resp.Status)
+		_ = DiscardBody(resp.Body)
+		return &downloadError{err: fmt.Errorf("download update: %s", resp.Status), retryable: retryableHTTPStatus(resp.StatusCode)}
 	}
 	if _, err := io.Copy(w, resp.Body); err != nil {
-		return fmt.Errorf("write update: %w", err)
+		return &downloadError{err: fmt.Errorf("write update: %w", err), retryable: true}
 	}
 	return nil
+}
+
+type downloadError struct {
+	err       error
+	retryable bool
+}
+
+func (e *downloadError) Error() string { return e.err.Error() }
+func (e *downloadError) Unwrap() error { return e.err }
+
+func retryDownload(err error) bool {
+	var downloadErr *downloadError
+	return errors.As(err, &downloadErr) && downloadErr.retryable
+}
+
+func retryableHTTPStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
+}
+
+func waitDownloadRetry(ctx context.Context) error {
+	timer := time.NewTimer(downloadRetryWait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // FindAsset returns the release asset matching goos/goarch.
