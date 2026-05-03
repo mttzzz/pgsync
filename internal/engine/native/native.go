@@ -21,6 +21,7 @@ import (
 const (
 	stageSnapshot        = "snapshot"
 	stageDumpPreData     = "dump-pre-data"
+	stageCheckExtensions = "check-extensions"
 	stageResetTarget     = "reset-target"
 	stageConnectTarget   = "connect-target"
 	stageApplyPreData    = "apply-pre-data"
@@ -50,6 +51,7 @@ type NativeEngine struct {
 type nativeStages struct {
 	exportSnapshot  func(context.Context, pgdb.CopyConn) (*Snapshot, error)
 	dumpSchema      func(context.Context, pgdb.Endpoint, SchemaSection) (string, error)
+	checkExtensions func(context.Context, config.Connection, string) error
 	resetTarget     func(context.Context, config.Connection, string) error
 	applySQL        func(context.Context, pgdb.CopyConn, SchemaSection, string) error
 	copyTables      func(context.Context, CopyTablesOptions) (*models.SyncResult, error)
@@ -72,10 +74,11 @@ func NewDefault(logger *slog.Logger) (*NativeEngine, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	execRunner := runner.NewExec()
 	return New(Dependencies{
 		Connector: pgdb.NewConnector(),
-		Runner:    runner.NewExec(),
-		Locator:   pgtools.NewLocator(pgtools.LocatorOptions{Logger: logger}),
+		Runner:    execRunner,
+		Locator:   pgtools.NewLocator(pgtools.LocatorOptions{Runner: execRunner, Logger: logger}),
 		Clock:     clockpkg.NewSystem(),
 		Logger:    logger,
 	})
@@ -181,9 +184,11 @@ func missingDependencies(deps Dependencies) []string {
 func productionStages(deps Dependencies) nativeStages {
 	dumper := &SchemaDumper{Runner: deps.Runner, Locator: deps.Locator}
 	target := &TargetManager{Connector: deps.Connector}
+	extensions := &ExtensionChecker{Connector: deps.Connector}
 	return nativeStages{
 		exportSnapshot:  ExportSnapshot,
 		dumpSchema:      dumper.Dump,
+		checkExtensions: extensions.CheckPreData,
 		resetTarget:     target.ResetDatabase,
 		applySQL:        ApplySQL,
 		copyTables:      CopyTables,
@@ -299,6 +304,9 @@ func (r *executionRun) executeStages() (err error) {
 	if err != nil {
 		return err
 	}
+	if err := r.checkExtensions(preDataSQL); err != nil {
+		return err
+	}
 	if err := r.runVoidStage(stageResetTarget, func(ctx context.Context) error {
 		return r.engine.stages.resetTarget(ctx, r.plan.Local, r.plan.Database)
 	}); err != nil {
@@ -360,6 +368,12 @@ func (r *executionRun) dumpSchema(remote pgdb.Endpoint, section SchemaSection, s
 		return err
 	})
 	return sql, err
+}
+
+func (r *executionRun) checkExtensions(preDataSQL string) error {
+	return r.runVoidStage(stageCheckExtensions, func(ctx context.Context) error {
+		return r.engine.stages.checkExtensions(ctx, r.plan.Local, preDataSQL)
+	})
 }
 
 func (r *executionRun) connectTarget(local pgdb.Endpoint) (pgdb.CopyConn, error) {

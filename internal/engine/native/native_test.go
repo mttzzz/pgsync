@@ -208,6 +208,7 @@ func TestExecuteHappyPathRunsStagesInOrder(t *testing.T) {
 	assert.Equal(t, []string{
 		stageSnapshot,
 		stageDumpPreData,
+		stageCheckExtensions,
 		stageResetTarget,
 		stageApplyPreData,
 		stageCopyTables,
@@ -218,6 +219,7 @@ func TestExecuteHappyPathRunsStagesInOrder(t *testing.T) {
 	assert.Equal(t, []string{
 		stageSnapshot,
 		stageDumpPreData,
+		stageCheckExtensions,
 		stageResetTarget,
 		stageConnectTarget,
 		stageApplyPreData,
@@ -249,6 +251,7 @@ func TestExecuteStageFailuresEmitFailedEventAndCleanup(t *testing.T) {
 	}{
 		{name: stageSnapshot, failStage: stageSnapshot},
 		{name: stageDumpPreData, failStage: stageDumpPreData},
+		{name: stageCheckExtensions, failStage: stageCheckExtensions},
 		{name: stageResetTarget, failStage: stageResetTarget},
 		{name: stageConnectTarget, connectFailAt: 2},
 		{name: stageApplyPreData, failStage: stageApplyPreData},
@@ -328,7 +331,7 @@ func TestExecuteContextCancellationStopsBeforeLaterStages(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, engine.EventSyncFailed, observer.events[len(observer.events)-1].Name)
 	assert.False(t, nativeStageReached(observer.events, stageConnectTarget))
-	assert.Equal(t, []string{stageSnapshot, stageDumpPreData, stageResetTarget}, recorder.calls)
+	assert.Equal(t, []string{stageSnapshot, stageDumpPreData, stageCheckExtensions, stageResetTarget}, recorder.calls)
 	assert.Equal(t, 1, snapshotConn.closeCount)
 }
 
@@ -621,6 +624,7 @@ func installNativeStageFakes(eng *NativeEngine, recorder *nativeStageRecorder) {
 	eng.stages = nativeStages{
 		exportSnapshot:  recorder.exportSnapshot,
 		dumpSchema:      recorder.dumpSchema,
+		checkExtensions: recorder.checkExtensions,
 		resetTarget:     recorder.resetTarget,
 		applySQL:        recorder.applySQL,
 		copyTables:      recorder.copyTables,
@@ -643,6 +647,11 @@ func (r *nativeStageRecorder) dumpSchema(_ context.Context, _ pgdb.Endpoint, sec
 		return "", nativeSecretError()
 	}
 	return string(section) + " SQL", nil
+}
+
+func (r *nativeStageRecorder) checkExtensions(_ context.Context, _ config.Connection, _ string) error {
+	r.record(stageCheckExtensions)
+	return r.stageErr(stageCheckExtensions)
 }
 
 func (r *nativeStageRecorder) resetTarget(_ context.Context, _ config.Connection, _ string) error {

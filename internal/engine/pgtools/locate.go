@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+
+	"github.com/mttzzz/pgsync/internal/runner"
 )
 
 /* Looker abstracts exec.LookPath for tests. */
@@ -75,6 +77,7 @@ type LocatorOptions struct {
 	CacheRoot string
 	System    Locator
 	Extractor *Extractor
+	Runner    runner.CommandRunner
 	Logger    *slog.Logger
 }
 
@@ -96,9 +99,14 @@ func NewLocator(opts LocatorOptions) *SelectingLocator {
 	}
 	extractor := opts.Extractor
 	if extractor == nil {
-		extractor = &Extractor{CacheRoot: opts.CacheRoot, Logger: opts.Logger}
-	} else if extractor.CacheRoot == "" {
-		extractor.CacheRoot = opts.CacheRoot
+		extractor = &Extractor{CacheRoot: opts.CacheRoot, Runner: locatorRunner(opts.Runner), Logger: opts.Logger}
+	} else {
+		if extractor.CacheRoot == "" {
+			extractor.CacheRoot = opts.CacheRoot
+		}
+		if extractor.Runner == nil {
+			extractor.Runner = locatorRunner(opts.Runner)
+		}
 	}
 	return &SelectingLocator{
 		useSystem: opts.UseSystem,
@@ -149,6 +157,13 @@ func (l *SelectingLocator) PgRestore() (string, error) {
 // Paths returns both selected tool paths and embedded cache metadata.
 func (l *SelectingLocator) Paths(ctx context.Context) (Paths, error) {
 	return l.ensure(ctx)
+}
+
+func locatorRunner(commandRunner runner.CommandRunner) runner.CommandRunner {
+	if commandRunner != nil {
+		return commandRunner
+	}
+	return runner.NewExec()
 }
 
 func (l *SelectingLocator) ensure(ctx context.Context) (Paths, error) {

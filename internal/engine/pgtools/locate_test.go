@@ -55,6 +55,12 @@ func TestExecLookerMissing(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestNewLocatorAddsDefaultExtractorRunner(t *testing.T) {
+	t.Parallel()
+	loc := pgtools.NewLocator(pgtools.LocatorOptions{Extractor: &pgtools.Extractor{}})
+	assert.Equal(t, "embedded", loc.Mode())
+}
+
 func TestBinNamesPlatform(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
