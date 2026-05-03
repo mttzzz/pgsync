@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -222,17 +223,36 @@ func FindAsset(assets []Asset, goos, goarch string) (Asset, error) {
 	return Asset{}, fmt.Errorf("asset %q not found", want)
 }
 
-// IsNewer reports whether candidate differs from current. dev builds can update to the latest release.
+// IsNewer reports whether candidate is semantically newer than current.
 func IsNewer(current, candidate string) bool {
 	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
 	candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "v")
-	if candidate == "" {
+	if candidate == "" || current == "" || current == "dev" {
 		return false
 	}
-	if current == "" || current == "dev" {
-		return true
+	currentParts := versionParts(current)
+	candidateParts := versionParts(candidate)
+	for i := 0; i < len(candidateParts); i++ {
+		if candidateParts[i] > currentParts[i] {
+			return true
+		}
+		if candidateParts[i] < currentParts[i] {
+			return false
+		}
 	}
-	return candidate != current
+	return false
+}
+
+func versionParts(raw string) [3]int {
+	var out [3]int
+	parts := strings.Split(raw, ".")
+	for i := 0; i < len(parts) && i < len(out); i++ {
+		value, err := strconv.Atoi(parts[i])
+		if err == nil {
+			out[i] = value
+		}
+	}
+	return out
 }
 
 // DiscardBody is a small helper used by download flows.

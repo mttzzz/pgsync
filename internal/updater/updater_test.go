@@ -47,7 +47,7 @@ func TestCheckFindAssetVersionAndDiscardHelpers(t *testing.T) {
 		assetName += ".exe"
 	}
 	doer := &fakeDoer{resp: &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3","html_url":"https://example","assets":[{"name":"` + assetName + `","browser_download_url":"https://download","size":42}]}`))}}
-	info, err := (Client{RepoURL: "https://api.github.com/repos/o/r", Doer: doer}).Check(context.Background(), "dev")
+	info, err := (Client{RepoURL: "https://api.github.com/repos/o/r", Doer: doer}).Check(context.Background(), "v1.2.2")
 	require.NoError(t, err)
 	assert.True(t, info.Available)
 	assert.Equal(t, "https://download", info.DownloadURL)
@@ -59,8 +59,10 @@ func TestCheckFindAssetVersionAndDiscardHelpers(t *testing.T) {
 	assert.Error(t, err)
 
 	assert.False(t, IsNewer("v1", "1"))
-	assert.True(t, IsNewer("dev", "v1"))
+	assert.False(t, IsNewer("dev", "v1"))
+	assert.False(t, IsNewer("v2", "v1"))
 	assert.True(t, IsNewer("v1", "v2"))
+	assert.True(t, IsNewer("v1.2.2", "v1.2.3"))
 	assert.NoError(t, DiscardBody(strings.NewReader("abc")))
 }
 
