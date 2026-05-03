@@ -3,10 +3,12 @@ package screens
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/mttzzz/pgsync/internal/config"
@@ -36,6 +38,25 @@ func TestStaticAndBasicScreens(t *testing.T) {
 	assert.Contains(t, Progress("copy", 42).View(), "42.0%")
 	assert.Contains(t, Result(nil).View(), "No sync result")
 	assert.Contains(t, Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0), RowsCopied: 3, TablesCopied: 1, BytesCopied: 1024, Err: errors.New("bad")}).View(), "bad")
+}
+
+func TestScreensFitNarrowViewport(t *testing.T) {
+	t.Parallel()
+	const narrowWidth = 60
+	cfg := validConfigForScreens()
+	assertMaxNarrowLineWidth(t, DatabaseList([]models.Database{{Name: "very_long_database_name", SizeBytes: 1024, TableCount: 3}}, nil, DatabaseListOptions{Width: narrowWidth, Height: 24, Config: cfg}).View())
+	assertMaxNarrowLineWidth(t, TablesPick([]models.Table{{Schema: "public", Name: "very_long_table_name", Rows: 2, SizeBytes: 2048}}, TableListOptions{Database: "db", Width: narrowWidth, Height: 24, Config: cfg}).View())
+	assertMaxNarrowLineWidth(t, ConfirmPlan(&models.SyncPlan{Database: "db", Tables: []models.Table{{Name: "x"}}, Engine: "native"}, HeaderOptions{Width: narrowWidth, Config: cfg}).View())
+	assertMaxNarrowLineWidth(t, ProgressDashboard(ProgressSnapshot{Header: HeaderOptions{Width: narrowWidth, Config: cfg}, Stage: "copy", OverallPercent: 42, AnimatedPercent: 42, Now: time.Now()}).View())
+	assertMaxNarrowLineWidth(t, Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0), RowsCopied: 3, TablesCopied: 1, BytesCopied: 1024}, ResultOptions{Header: HeaderOptions{Width: narrowWidth, Config: cfg}}).View())
+}
+
+func assertMaxNarrowLineWidth(t *testing.T, view string) {
+	t.Helper()
+	const narrowWidth = 60
+	for _, line := range strings.Split(view, "\n") {
+		assert.LessOrEqual(t, lipgloss.Width(line), narrowWidth, line)
+	}
 }
 
 func TestZoneIdentifiers(t *testing.T) {

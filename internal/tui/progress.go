@@ -130,7 +130,7 @@ func (p *LiveProgress) Tick(now time.Time) {
 func (p LiveProgress) Snapshot(cfg config.Config, width int) screens.ProgressSnapshot {
 	database := cfg.Runtime.DefaultDatabase
 	return screens.ProgressSnapshot{
-		Header:             screens.HeaderOptions{Config: cfg, Database: database, Width: maxInt(width-4, 104), Running: true, Started: p.StartedAt, Now: p.Now},
+		Header:             screens.HeaderOptions{Config: cfg, Database: database, Width: width, Running: true, Started: p.StartedAt, Now: p.Now},
 		Stage:              p.Stage,
 		CurrentTable:       p.CurrentTable,
 		StartedAt:          p.StartedAt,
