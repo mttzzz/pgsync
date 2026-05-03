@@ -90,6 +90,7 @@ func TablesPick(tables []models.Table, options ...TableListOptions) StaticScreen
 	return StaticScreen{ScreenID: TablesPickID, Heading: "Tables", Body: body, Hint: "↑/↓ move · Space toggle table · Y/Enter confirm · Esc back"}
 }
 
+//nolint:gocyclo // Renderer branches directly by UI state for clear terminal output.
 func renderDatabaseQueueBuilder(dbs []models.Database, err error, opts DatabaseListOptions) string {
 	width := maxInt(opts.Width, 96)
 	height := maxInt(opts.Height, 28)
@@ -97,15 +98,16 @@ func renderDatabaseQueueBuilder(dbs []models.Database, err error, opts DatabaseL
 	footer := queueSubtleStyle.Render(fmt.Sprintf("%s move   %s select DB   %s tables   %s select all   %s clear   %s reload   %s confirm   %s settings", queueKeyStyle.Render("↑/↓"), queueKeyStyle.Render("Space"), queueKeyStyle.Render("Enter"), queueKeyStyle.Render("A"), queueKeyStyle.Render("C"), queueKeyStyle.Render("R"), queueKeyStyle.Render("Y"), queueKeyStyle.Render("S")))
 
 	lines := []string{queueTitleStyle.Render("Database Queue Builder"), "", databaseListSummary(dbs), ""}
-	if err != nil {
+	switch {
+	case err != nil:
 		lines = append(lines, queueDangerStyle.Render("Error: "+err.Error()))
-	} else if len(dbs) == 0 {
+	case len(dbs) == 0:
 		status := opts.Status
 		if status == "" {
 			status = "Loading remote databases..."
 		}
 		lines = append(lines, queueLoadingStyle.Render(status))
-	} else {
+	default:
 		visible := clampInt(height-14, 8, 18)
 		start, end := visibleRange(opts.SelectedIndex, len(dbs), visible)
 		nameWidth, sizeWidth, tablesWidth := databaseColumnWidths(dbs)
@@ -135,19 +137,21 @@ func renderDatabaseQueueBuilder(dbs []models.Database, err error, opts DatabaseL
 	return queuePageStyle.Render(strings.Join([]string{queueHeaderStyle.Render("PGSync Control Center"), "", panel, "", footer}, "\n"))
 }
 
+//nolint:gocyclo // Renderer branches directly by UI state for clear terminal output.
 func renderTablePicker(tables []models.Table, opts TableListOptions) string {
 	width := maxInt(opts.Width, 96)
 	height := maxInt(opts.Height, 28)
 	bodyWidth := maxInt(width-4, 80)
 	footer := queueSubtleStyle.Render(fmt.Sprintf("%s move   %s toggle table   %s reload   %s confirm   %s back   %s settings", queueKeyStyle.Render("↑/↓"), queueKeyStyle.Render("Space"), queueKeyStyle.Render("R"), queueKeyStyle.Render("Y/Enter"), queueKeyStyle.Render("Esc"), queueKeyStyle.Render("S")))
 	lines := []string{queueTitleStyle.Render("Tables: ") + queueKeyStyle.Render(opts.Database), "", tableListSummary(tables), ""}
-	if opts.Err != nil {
+	switch {
+	case opts.Err != nil:
 		lines = append(lines, queueDangerStyle.Render("Error: "+opts.Err.Error()))
-	} else if opts.Loading {
+	case opts.Loading:
 		lines = append(lines, queueLoadingStyle.Render(opts.Status))
-	} else if len(tables) == 0 {
+	case len(tables) == 0:
 		lines = append(lines, queueSubtleStyle.Render("No user tables found. Enter/Y continues with full database selection."))
-	} else {
+	default:
 		visible := clampInt(height-14, 8, 18)
 		start, end := visibleRange(opts.SelectedIndex, len(tables), visible)
 		nameWidth := tableNameWidth(tables)

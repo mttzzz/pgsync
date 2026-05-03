@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	// DefaultRepoAPIURL is the GitHub API repository endpoint used by production updates.
 	DefaultRepoAPIURL = "https://api.github.com/repos/mttzzz/pgsync"
 	httpTimeout       = 30 * time.Second
 )
@@ -142,6 +143,8 @@ func (c Client) Check(ctx context.Context, currentVersion string) (UpdateInfo, e
 }
 
 // Install downloads info's asset and atomically replaces the current executable.
+//
+//nolint:gocyclo // Self-update install is a linear sequence with error handling for each filesystem step.
 func (c Client) Install(ctx context.Context, info UpdateInfo) (UpdateResult, error) {
 	started := time.Now()
 	if info.DownloadURL == "" {

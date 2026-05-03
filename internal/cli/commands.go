@@ -151,16 +151,6 @@ func newVersionCommand(app App) *cobra.Command {
 	}
 }
 
-func newUnimplementedCommand(name string) *cobra.Command {
-	return &cobra.Command{
-		Use:   name,
-		Short: "Not implemented in Phase 2",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return fmt.Errorf("%s: %w", cmd.Name(), ErrNotImplemented)
-		},
-	}
-}
-
 func (f *globalFlags) overrides(cmd *cobra.Command) FlagOverrides {
 	flags := FlagOverrides{
 		ConfigPath: f.ConfigPath,

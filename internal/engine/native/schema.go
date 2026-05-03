@@ -35,6 +35,8 @@ type SchemaDumper struct {
 }
 
 // Dump returns plain SQL for the requested pg_dump schema section.
+//
+//nolint:gocyclo // Dump validates dependencies and handles optional proxy tunneling around pg_dump.
 func (d *SchemaDumper) Dump(ctx context.Context, source pgdb.Endpoint, section SchemaSection) (string, error) {
 	if err := validateSchemaSection(section); err != nil {
 		return "", err

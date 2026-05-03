@@ -31,6 +31,7 @@ func (productionTUIRunner) RunWithConfig(ctx context.Context, mode cli.TUIMode, 
 	return runInteractiveTUI(ctx, mode, configPath)
 }
 
+//nolint:gocognit // Interactive startup coordinates config loading, wizard, and app relaunch paths.
 func runInteractiveTUI(ctx context.Context, mode cli.TUIMode, configPath string) error {
 	cfg, path, loadErr := loadTUIConfig(configPath)
 	if path == "" {

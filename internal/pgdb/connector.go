@@ -202,7 +202,7 @@ func openPgxConnWithDialer(ctx context.Context, connString string, dialer Contex
 	if err != nil {
 		return nil, err
 	}
-	cfg.Config.DialFunc = dialer.DialContext
+	cfg.DialFunc = dialer.DialContext
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
 		return nil, err

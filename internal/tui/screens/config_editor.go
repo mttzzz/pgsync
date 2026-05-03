@@ -143,7 +143,7 @@ func BuildEditableConfigForm(cfg *config.Config, mode ConfigEditorMode) *huh.For
 			huh.NewInput().Title("Хост prod").Description("Адрес удалённого PostgreSQL").Value(&cfg.Remote.Host).Validate(config.ValidateHost),
 			huh.NewInput().Title("Порт prod").Description("Порт удалённого PostgreSQL").Accessor(intStringAccessor{value: &cfg.Remote.Port}).Validate(validatePortString),
 			huh.NewInput().Title("Пользователь prod").Description("Пользователь для чтения").Value(&cfg.Remote.User).Validate(requiredString),
-			huh.NewInput().Title("Пароль prod").Description("Пароль удалённой БД").Value(&cfg.Remote.Password).Password(true),
+			huh.NewInput().Title("Пароль prod").Description("Пароль удалённой БД").Value(&cfg.Remote.Password).EchoMode(huh.EchoModePassword),
 			huh.NewInput().Title("База по умолчанию").Description("Необязательно: база для синхронизации по умолчанию").Value(&cfg.Remote.Database),
 			huh.NewSelect[string]().Title("SSL mode prod").Description("libpq sslmode").Options(huh.NewOptions("disable", "require", "verify-ca", "verify-full")...).Value(&cfg.Remote.SSLMode).Validate(config.ValidateSSLMode),
 			huh.NewInput().Title("Прокси").Description("Необязательно: SOCKS5/HTTP proxy URL").Value(&cfg.Remote.ProxyURL).Validate(config.ValidateProxyURL),
@@ -152,7 +152,7 @@ func BuildEditableConfigForm(cfg *config.Config, mode ConfigEditorMode) *huh.For
 			huh.NewInput().Title("Хост local").Description("Адрес локального PostgreSQL").Placeholder("localhost").Value(&cfg.Local.Host).Validate(config.ValidateHost),
 			huh.NewInput().Title("Порт local").Description("Порт локального PostgreSQL").Accessor(intStringAccessor{value: &cfg.Local.Port}).Validate(validatePortString),
 			huh.NewInput().Title("Пользователь local").Description("Пользователь локальной БД").Value(&cfg.Local.User).Validate(requiredString),
-			huh.NewInput().Title("Пароль local").Description("Пароль локальной БД").Value(&cfg.Local.Password).Password(true),
+			huh.NewInput().Title("Пароль local").Description("Пароль локальной БД").Value(&cfg.Local.Password).EchoMode(huh.EchoModePassword),
 			huh.NewSelect[string]().Title("SSL mode local").Description("libpq sslmode").Options(huh.NewOptions("disable", "require", "verify-ca", "verify-full")...).Value(&cfg.Local.SSLMode).Validate(config.ValidateSSLMode),
 		),
 		huh.NewGroup(

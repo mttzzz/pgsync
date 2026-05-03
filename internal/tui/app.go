@@ -206,6 +206,7 @@ func (a App) onTablesLoaded(msg TablesLoadedMsg) App {
 	return a
 }
 
+//nolint:gocyclo // Central Bubble Tea router keeps screen dispatch explicit.
 func (a App) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.state.Current == screens.MainMenuID {
 		return a.onMainMenuKey(msg)
@@ -250,6 +251,7 @@ func (a App) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+//nolint:gocognit // Mirrors keyboard UX from dbsync with multiple explicit shortcuts.
 func (a App) onDatabaseListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
@@ -312,6 +314,7 @@ func (a App) onDatabaseListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+//nolint:gocyclo // Table picker intentionally maps many single-key actions.
 func (a App) onTablesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "left", "h":
@@ -398,6 +401,7 @@ func (a App) onResultKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+//nolint:gocyclo // Menu shortcuts are kept in one small dispatcher for readability.
 func (a App) onMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	itemsCount := 3
 	switch msg.String() {
