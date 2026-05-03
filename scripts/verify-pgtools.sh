@@ -36,7 +36,7 @@ else
 fi
 
 platforms() {
-  awk '/^\[platforms\.[^]]+\]/{gsub(/^\[platforms\.|\]$/, ""); print}' "$MANIFEST"
+  awk '/^\[platforms\.[^]]+\]/{name=$0; sub(/^\[platforms\./, "", name); sub(/].*$/, "", name); print name}' "$MANIFEST"
 }
 
 field() {

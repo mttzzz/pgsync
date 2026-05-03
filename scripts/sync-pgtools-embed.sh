@@ -35,7 +35,7 @@ done
 [ -f "$MANIFEST" ] || fail "manifest not found: $MANIFEST"
 
 platforms() {
-  awk '/^\[platforms\.[^]]+\]/{gsub(/^\[platforms\.|\]$/, ""); print}' "$MANIFEST"
+  awk '/^\[platforms\.[^]]+\]/{name=$0; sub(/^\[platforms\./, "", name); sub(/].*$/, "", name); print name}' "$MANIFEST"
 }
 
 field() {
