@@ -98,23 +98,23 @@ func applyPostgresURL(cfg Config, rawURL string) (Config, error) {
 		return Config{}, fmt.Errorf("postgres url host is required")
 	}
 
-	cfg.Remote.Host = parsed.Hostname()
-	cfg.Remote.Port = 5432
+	cfg.Local.Host = parsed.Hostname()
+	cfg.Local.Port = 5432
 	if port := parsed.Port(); port != "" {
-		cfg.Remote.Port, _ = strconv.Atoi(port)
+		cfg.Local.Port, _ = strconv.Atoi(port)
 	}
 	if parsed.User != nil {
-		cfg.Remote.User = parsed.User.Username()
+		cfg.Local.User = parsed.User.Username()
 		if password, ok := parsed.User.Password(); ok {
-			cfg.Remote.Password = password
+			cfg.Local.Password = password
 		}
 	}
 	if database := postgresURLDatabase(parsed); database != "" {
-		cfg.Remote.Database = database
+		cfg.Local.Database = database
 		cfg.Runtime.DefaultDatabase = database
 	}
 	if sslMode := strings.TrimSpace(parsed.Query().Get("sslmode")); sslMode != "" {
-		cfg.Remote.SSLMode = sslMode
+		cfg.Local.SSLMode = sslMode
 	}
 	return cfg, nil
 }

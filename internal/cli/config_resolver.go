@@ -205,12 +205,12 @@ func connectionHostsProvided(env map[string]string, flags FlagOverrides) bool {
 	if remote == "" {
 		remote = strings.TrimSpace(env["PGSYNC_REMOTE_HOST"])
 	}
-	if remote == "" {
-		remote = strings.TrimSpace(env["POSTGRES_URL"])
-	}
 	local := strings.TrimSpace(flags.Local.Host)
 	if local == "" {
 		local = strings.TrimSpace(env["PGSYNC_LOCAL_HOST"])
+	}
+	if local == "" {
+		local = strings.TrimSpace(env["POSTGRES_URL"])
 	}
 	return remote != "" && local != ""
 }

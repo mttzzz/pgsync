@@ -62,32 +62,32 @@ func TestApplyEnvPostgresURL(t *testing.T) {
 		"POSTGRES_URL": strings.Join([]string{"postgresql://app:", "sec", "ret", "@db.example.com:6543/my%20db?sslmode=verify-full"}, ""),
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "db.example.com", got.Remote.Host)
-	assert.Equal(t, 6543, got.Remote.Port)
-	assert.Equal(t, "app", got.Remote.User)
-	assert.Equal(t, "secret", got.Remote.Password)
-	assert.Equal(t, "my db", got.Remote.Database)
+	assert.Equal(t, "db.example.com", got.Local.Host)
+	assert.Equal(t, 6543, got.Local.Port)
+	assert.Equal(t, "app", got.Local.User)
+	assert.Equal(t, "secret", got.Local.Password)
+	assert.Equal(t, "my db", got.Local.Database)
 	assert.Equal(t, "my db", got.Runtime.DefaultDatabase)
-	assert.Equal(t, "verify-full", got.Remote.SSLMode)
+	assert.Equal(t, "verify-full", got.Local.SSLMode)
 }
 
 func TestApplyEnvPostgresURLCanBeOverriddenByPGSyncEnv(t *testing.T) {
 	t.Parallel()
 	got, err := config.ApplyEnv(config.Defaults(), map[string]string{
 		"POSTGRES_URL":              strings.Join([]string{"postgres://app:", "sec", "ret", "@db.example.com/from_url"}, ""),
-		"PGSYNC_REMOTE_HOST":        "override.example.com",
+		"PGSYNC_LOCAL_HOST":         "override.example.com",
 		"PGSYNC_DEFAULT_DATABASE":   "override_db",
-		"PGSYNC_REMOTE_PASSWORD":    "override-secret",
-		"PGSYNC_REMOTE_SSL_MODE":    "require",
+		"PGSYNC_LOCAL_PASSWORD":     "override-secret",
+		"PGSYNC_LOCAL_SSL_MODE":     "require",
 		"PGSYNC_REMOTE_PROXY_URL":   "socks5://proxy:1080",
 		"PGSYNC_CONCURRENT_INDEXES": "true",
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "override.example.com", got.Remote.Host)
-	assert.Equal(t, "override-secret", got.Remote.Password)
-	assert.Equal(t, "from_url", got.Remote.Database)
+	assert.Equal(t, "override.example.com", got.Local.Host)
+	assert.Equal(t, "override-secret", got.Local.Password)
+	assert.Equal(t, "from_url", got.Local.Database)
 	assert.Equal(t, "override_db", got.Runtime.DefaultDatabase)
-	assert.Equal(t, "require", got.Remote.SSLMode)
+	assert.Equal(t, "require", got.Local.SSLMode)
 }
 
 func TestApplyEnvPostgresURLDefaultsOptionalParts(t *testing.T) {
@@ -96,11 +96,11 @@ func TestApplyEnvPostgresURLDefaultsOptionalParts(t *testing.T) {
 		"POSTGRES_URL": "postgres://db.example.com",
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "db.example.com", got.Remote.Host)
-	assert.Equal(t, 5432, got.Remote.Port)
-	assert.Empty(t, got.Remote.User)
-	assert.Empty(t, got.Remote.Password)
-	assert.Empty(t, got.Remote.Database)
+	assert.Equal(t, "db.example.com", got.Local.Host)
+	assert.Equal(t, 5432, got.Local.Port)
+	assert.Empty(t, got.Local.User)
+	assert.Empty(t, got.Local.Password)
+	assert.Empty(t, got.Local.Database)
 	assert.Empty(t, got.Runtime.DefaultDatabase)
 }
 
