@@ -76,6 +76,25 @@ func TestResolveUsesProcessEnvironment(t *testing.T) {
 	assert.Equal(t, "file-remote", got.Remote.Host)
 }
 
+func TestResolveLoadsDotEnvPostgresURL(t *testing.T) {
+	clearPGSyncEnv(t)
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte(strings.Join([]string{
+		strings.Join([]string{"POSTGRES_URL='postgresql://app:", "sec", "ret", "@dotenv.example.com:6543/dotenv_db?sslmode=require'"}, ""),
+		"PGSYNC_LOCAL_HOST='env-local'",
+		"PGSYNC_LOCAL_USER='postgres'",
+	}, "\n")), 0o600))
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	got, err := Resolve(context.Background(), FlagOverrides{})
+	require.NoError(t, err)
+	assert.Equal(t, "dotenv.example.com", got.Remote.Host)
+	assert.Equal(t, "dotenv_db", got.Runtime.DefaultDatabase)
+}
+
 func TestResolverUsesProcessEnvironmentWhenEnvIsNil(t *testing.T) {
 	clearPGSyncEnv(t)
 	path := writeTestConfig(t, testConfig())
@@ -203,6 +222,29 @@ func TestPlanOptionsFromConfigValidationError(t *testing.T) {
 	cfg.Remote.Host = ""
 	_, err := PlanOptionsFromConfig(cfg, "fixture-db", SyncFlags{})
 	assert.Error(t, err)
+}
+
+func TestDotEnvParsing(t *testing.T) {
+	t.Parallel()
+	key, value, ok := parseDotEnvLine("export POSTGRES_URL='postgres://u:p@h/db'")
+	assert.True(t, ok)
+	assert.Equal(t, "POSTGRES_URL", key)
+	assert.Equal(t, "postgres://u:p@h/db", value)
+	key, value, ok = parseDotEnvLine(`NUXT_DB_NAME="app"`)
+	assert.True(t, ok)
+	assert.Equal(t, "NUXT_DB_NAME", key)
+	assert.Equal(t, "app", value)
+	key, value, ok = parseDotEnvLine("A=value # comment")
+	assert.True(t, ok)
+	assert.Equal(t, "A", key)
+	assert.Equal(t, "value", value)
+	_, _, ok = parseDotEnvLine("# comment")
+	assert.False(t, ok)
+	_, _, ok = parseDotEnvLine("invalid")
+	assert.False(t, ok)
+	_, _, ok = parseDotEnvLine("=value")
+	assert.False(t, ok)
+	assert.Empty(t, loadDotEnv(filepath.Join(t.TempDir(), "missing.env")))
 }
 
 func TestEnvMap(t *testing.T) {
