@@ -314,7 +314,7 @@ func (a App) onDatabaseListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-//nolint:gocyclo // Table picker intentionally maps many single-key actions.
+//nolint:gocyclo,gocognit // Table picker intentionally maps many single-key actions.
 func (a App) onTablesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "left", "h":
@@ -355,6 +355,10 @@ func (a App) onTablesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.state.Quit = true
 		return a, tea.Quit
 	case "y", "enter":
+		if a.state.TablesLoading {
+			a.state.Status = "Tables are still loading; wait before confirming"
+			return a, nil
+		}
 		a.state.Current = screens.ConfirmPlanID
 	}
 	return a, nil

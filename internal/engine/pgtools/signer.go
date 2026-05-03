@@ -48,7 +48,11 @@ func (s darwinSigner) Sign(ctx context.Context, path string) error {
 	}
 	_, stderr, err := s.runner.Run(ctx, "codesign", []string{"--sign", "-", "--identifier", "dev.pgsync.bundled", path}, nil)
 	if err != nil {
-		return fmt.Errorf("codesign %s failed: %w: %s", path, err, strings.TrimSpace(string(stderr)))
+		message := strings.TrimSpace(string(stderr))
+		if strings.Contains(message, "is already signed") {
+			return nil
+		}
+		return fmt.Errorf("codesign %s failed: %w: %s", path, err, message)
 	}
 	if s.logger != nil {
 		s.logger.Debug("signed embedded pgtools binary", "path", path)

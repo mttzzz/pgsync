@@ -129,6 +129,32 @@ func TestScreenBody(t *testing.T) {
 	}
 }
 
+func TestTablesPickerBlocksConfirmWhileLoading(t *testing.T) {
+	t.Parallel()
+	app := NewAppWithServices(validCfg(), Services{Catalog: &fakeCatalogService{tables: []models.Table{{Schema: "public", Name: "users"}}}})
+	model, _ := app.Update(DatabasesLoadedMsg{Databases: []models.Database{{Name: "app"}}})
+	app = model.(App)
+
+	model, cmd := app.Update(key("enter"))
+	app = model.(App)
+	require.NotNil(t, cmd)
+	loadCmd := cmd
+	assert.Equal(t, screens.TablesPickID, app.State().Current)
+	assert.True(t, app.State().TablesLoading)
+
+	model, cmd = app.Update(key("enter"))
+	app = model.(App)
+	require.Nil(t, cmd)
+	assert.Equal(t, screens.TablesPickID, app.State().Current)
+	assert.Contains(t, app.State().Status, "still loading")
+
+	model, _ = app.Update(loadCmd())
+	app = model.(App)
+	model, _ = app.Update(key("enter"))
+	app = model.(App)
+	assert.Equal(t, screens.ConfirmPlanID, app.State().Current)
+}
+
 func TestAppLoadsDatabasesThroughCatalogService(t *testing.T) {
 	t.Parallel()
 	catalog := &fakeCatalogService{databases: []models.Database{{Name: "app", SizeBytes: 1024, Owner: "postgres"}}}
@@ -185,6 +211,7 @@ func key(s string) tea.KeyMsg {
 
 type fakeCatalogService struct {
 	databases       []models.Database
+	tables          []models.Table
 	listedDatabases bool
 }
 
@@ -194,7 +221,7 @@ func (f *fakeCatalogService) ListDatabases(ctx context.Context) ([]models.Databa
 }
 
 func (f *fakeCatalogService) ListTables(ctx context.Context, database string) ([]models.Table, error) {
-	return nil, nil
+	return f.tables, nil
 }
 
 func validCfg() config.Config {
