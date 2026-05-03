@@ -251,7 +251,7 @@ func (a App) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-//nolint:gocognit // Mirrors keyboard UX from dbsync with multiple explicit shortcuts.
+//nolint:gocognit,gocyclo // Mirrors keyboard UX from dbsync with multiple explicit shortcuts.
 func (a App) onDatabaseListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":

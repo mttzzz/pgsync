@@ -90,7 +90,7 @@ func TablesPick(tables []models.Table, options ...TableListOptions) StaticScreen
 	return StaticScreen{ScreenID: TablesPickID, Heading: "Tables", Body: body, Hint: "↑/↓ move · Space toggle table · Y/Enter confirm · Esc back"}
 }
 
-//nolint:gocyclo // Renderer branches directly by UI state for clear terminal output.
+//nolint:gocyclo,gocognit // Renderer branches directly by UI state for clear terminal output.
 func renderDatabaseQueueBuilder(dbs []models.Database, err error, opts DatabaseListOptions) string {
 	width := maxInt(opts.Width, 96)
 	height := maxInt(opts.Height, 28)
