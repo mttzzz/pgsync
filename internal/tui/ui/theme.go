@@ -44,10 +44,10 @@ type Styles struct {
 // NewStyles creates a consistent high-contrast theme.
 func NewStyles() Styles {
 	return Styles{
-		Page:        lipgloss.NewStyle().Padding(1, 2),
-		Header:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorPrimary).Padding(0, 2).Foreground(ColorText),
+		Page:        lipgloss.NewStyle().Padding(0, 1),
+		Header:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorPrimary).Padding(0, 1).Foreground(ColorText),
 		HeaderTitle: lipgloss.NewStyle().Bold(true).Foreground(ColorText),
-		Panel:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorBorder).Padding(1, 2).Foreground(ColorText),
+		Panel:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorBorder).Padding(0, 1).Foreground(ColorText),
 		PanelTitle:  lipgloss.NewStyle().Bold(true).Foreground(ColorText),
 		Muted:       lipgloss.NewStyle().Foreground(ColorMuted),
 		Primary:     lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true),
@@ -57,7 +57,7 @@ func NewStyles() Styles {
 		Danger:      lipgloss.NewStyle().Foreground(ColorDanger).Bold(true),
 		Row:         lipgloss.NewStyle().Foreground(ColorText),
 		SelectedRow: lipgloss.NewStyle().Foreground(ColorText).Background(lipgloss.Color("#312E81")).Bold(true),
-		Footer:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorBorder).Padding(0, 2).Foreground(ColorMuted),
+		Footer:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorBorder).Padding(0, 1).Foreground(ColorMuted),
 		Key:         lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true),
 		Button:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorBorder).Padding(0, 2).Foreground(ColorText),
 		HotButton:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorPrimary).Padding(0, 2).Foreground(ColorPrimary).Bold(true),
