@@ -104,6 +104,27 @@ func TestApplyEnvPostgresURLDefaultsOptionalParts(t *testing.T) {
 	assert.Empty(t, got.Runtime.DefaultDatabase)
 }
 
+func TestApplyEnvDBDatabaseSetsLocalAndDefaultDatabase(t *testing.T) {
+	t.Parallel()
+	got, err := config.ApplyEnv(config.Defaults(), map[string]string{
+		"DB_DATABASE": "octane_pushka_biz",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "octane_pushka_biz", got.Local.Database)
+	assert.Equal(t, "octane_pushka_biz", got.Runtime.DefaultDatabase)
+}
+
+func TestApplyEnvPostgresURLOverridesDBDatabase(t *testing.T) {
+	t.Parallel()
+	got, err := config.ApplyEnv(config.Defaults(), map[string]string{
+		"DB_DATABASE":  "ignored_laravel_name",
+		"POSTGRES_URL": "postgres://app@db.example.com/url_db",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "url_db", got.Local.Database)
+	assert.Equal(t, "url_db", got.Runtime.DefaultDatabase)
+}
+
 func TestApplyEnvBadPostgresURL(t *testing.T) {
 	t.Parallel()
 	for _, rawURL := range []string{

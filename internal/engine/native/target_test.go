@@ -59,6 +59,23 @@ func TestTargetManagerResetDatabaseUsesConfiguredMaintenanceDatabaseAndRedactsCo
 	assert.Equal(t, "maintenance", connector.calls[0].endpoint.Database)
 }
 
+func TestTargetManagerResetDatabaseFallsBackToPostgresWhenLocalDatabaseEqualsTarget(t *testing.T) {
+	t.Parallel()
+	conn := &targetFakeConn{}
+	connector := &targetFakeConnector{conn: conn}
+	manager := &TargetManager{Connector: connector}
+	/* POSTGRES_URL=postgres://...@localhost/appdb fills both local.Database and the
+	 * sync target with "appdb"; connecting maintenance to "appdb" would self-block
+	 * the subsequent DROP DATABASE with SQLSTATE 55006. */
+	local := targetLocalConnection("appdb")
+
+	err := manager.ResetDatabase(context.Background(), local, "appdb")
+
+	require.NoError(t, err)
+	require.Len(t, connector.calls, 1)
+	assert.Equal(t, "postgres", connector.calls[0].endpoint.Database)
+}
+
 func TestTargetManagerResetDatabaseRequiresManagerAndConnector(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

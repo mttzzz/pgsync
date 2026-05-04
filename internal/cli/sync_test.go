@@ -105,14 +105,13 @@ func TestSyncDryRunPrintsPlanWithoutConfirmation(t *testing.T) {
 	assert.NotContains(t, out, "local-pass")
 }
 
-func TestSyncRequiresConfirmation(t *testing.T) {
+func TestSyncRunsWithoutConfirmation(t *testing.T) {
 	t.Parallel()
 	fake := &fakeEngine{}
 	_, _, err := executeRoot(t, appWithEngine(fake), "--config", writeTestConfig(t, testConfig()), "sync", "mydb")
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrConfirmationRequired)
+	require.NoError(t, err)
 	assert.Equal(t, 1, fake.planCalls)
-	assert.Zero(t, fake.executeCalls)
+	assert.Equal(t, 1, fake.executeCalls)
 }
 
 func TestSyncTablesAndGlobalFlagsOverrideConfig(t *testing.T) {
