@@ -25,7 +25,6 @@ func TestCLISyncJSONModeEmitsLifecycleEvents(t *testing.T) {
 		"--config", configPath,
 		"--output=json",
 		"sync", tinyDatabaseName,
-		"--yes",
 		"--threads=2",
 		"--use-system-pgtools",
 	)

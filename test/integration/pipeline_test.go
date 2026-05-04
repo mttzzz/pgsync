@@ -143,7 +143,6 @@ func syncPlanOptions(
 		Mode:             engine.ModeNative,
 		UseSystemPgtools: true,
 		DryRun:           dryRun,
-		Yes:              true,
 	}
 }
 

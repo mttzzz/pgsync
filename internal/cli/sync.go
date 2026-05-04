@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -32,7 +31,6 @@ func newSyncCommand(app App, globals *globalFlags) *cobra.Command {
 	}
 	cmd.Flags().StringSliceVar(&flags.Tables, "tables", nil, "comma-separated table allow-list")
 	cmd.Flags().BoolVar(&flags.DryRun, "dry-run", false, "print the sync plan without executing it")
-	cmd.Flags().BoolVar(&flags.Yes, "yes", false, "confirm destructive target reset")
 	cmd.Flags().BoolVar(&flags.Analyze, "analyze", false, "run ANALYZE after copy")
 	return cmd
 }
@@ -58,9 +56,6 @@ func runSync(ctx context.Context, app App, overrides FlagOverrides, syncFlags Sy
 	plainOpts := plainOptions(overrides)
 	if syncFlags.DryRun {
 		return PrintPlan(app.Out, plan, plainOpts)
-	}
-	if !syncFlags.Yes {
-		return fmt.Errorf("%w: rerun with --yes to execute sync", ErrConfirmationRequired)
 	}
 	result, err := eng.Execute(ctx, plan, newSyncObserver(app.Out, overrides))
 	if err != nil {

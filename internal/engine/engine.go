@@ -34,7 +34,6 @@ type PlanOptions struct {
 	Mode              Mode
 	UseSystemPgtools  bool
 	DryRun            bool
-	Yes               bool
 	ConcurrentIndexes bool
 	Analyze           bool
 }

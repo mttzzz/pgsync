@@ -31,7 +31,10 @@ func (c *ExtensionChecker) CheckPreData(ctx context.Context, local config.Connec
 	if len(required) == 0 {
 		return nil
 	}
-	endpoint := pgdb.EndpointFromConfig(local, maintenanceDatabase(local))
+	/* CheckPreData runs before ResetDatabase, but at this point the target may
+	 * not yet exist on first sync. Treat local.Database as the eventual target
+	 * so we always pick a stable maintenance DB. */
+	endpoint := pgdb.EndpointFromConfig(local, maintenanceDatabase(local, local.Database))
 	conn, err := c.Connector.Connect(ctx, endpoint)
 	if err != nil {
 		return fmt.Errorf("connect target maintenance database %q for extension preflight: %w", endpoint.Database, err)

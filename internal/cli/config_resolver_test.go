@@ -192,7 +192,6 @@ func TestPlanOptionsFromConfig(t *testing.T) {
 	opts, err := PlanOptionsFromConfig(cfg, " ", SyncFlags{
 		Tables:  []string{"users", "orders", "users"},
 		DryRun:  true,
-		Yes:     true,
 		Analyze: true,
 	})
 	require.NoError(t, err)
@@ -201,7 +200,6 @@ func TestPlanOptionsFromConfig(t *testing.T) {
 	assert.Equal(t, 4, opts.Threads)
 	assert.Equal(t, engine.ModeNative, opts.Mode)
 	assert.True(t, opts.DryRun)
-	assert.True(t, opts.Yes)
 	assert.True(t, opts.ConcurrentIndexes)
 	assert.True(t, opts.Analyze)
 }

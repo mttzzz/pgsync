@@ -29,13 +29,18 @@ Config is managed by `pgsync config` and the TUI; the TOML file is internal stor
 Release builds use embedded PostgreSQL 18 client tools by default. `--use-system-pgtools` is an explicit escape hatch when you want `pg_dump` / `pg_restore` from `PATH` instead.
 
 ```bash
-pgsync --config ~/.config/pgsync/config.toml sync my_database --yes --threads=8
-pgsync --config ~/.config/pgsync/config.toml sync my_database --yes --use-system-pgtools
-pgsync --config ./ci-pgsync.toml --output=json sync my_database --yes  # NDJSON
+pgsync --config ~/.config/pgsync/config.toml sync my_database --threads=8
+pgsync --config ~/.config/pgsync/config.toml sync my_database --use-system-pgtools
+pgsync --config ./ci-pgsync.toml --output=json sync my_database  # NDJSON
 pgsync sync my_database --tables users,orders --dry-run
 pgsync doctor --output=json
 pgsync upgrade --check-only
 ```
+
+When `POSTGRES_URL` is set in the environment or `.env`, the local connection
+(host, port, user, password, database) is derived from it. As a convenience for
+Laravel/Symfony projects, a standalone `DB_DATABASE` env var sets only the
+local target database name.
 
 ## Build / dev
 

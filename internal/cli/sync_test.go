@@ -70,10 +70,10 @@ func (f *fakeEngine) Execute(ctx context.Context, plan *models.SyncPlan, observe
 	return &models.SyncResult{Database: plan.Database, TablesCopied: len(plan.Tables), RowsCopied: 7, BytesCopied: 9}, nil
 }
 
-func TestSyncYesPlansAndExecutes(t *testing.T) {
+func TestSyncPlansAndExecutes(t *testing.T) {
 	t.Parallel()
 	fake := &fakeEngine{}
-	out, _, err := executeRoot(t, appWithEngine(fake), "--config", writeTestConfig(t, testConfig()), "sync", "mydb", "--yes")
+	out, _, err := executeRoot(t, appWithEngine(fake), "--config", writeTestConfig(t, testConfig()), "sync", "mydb")
 	require.NoError(t, err)
 	assert.Equal(t, 1, fake.planCalls)
 	assert.Equal(t, 1, fake.executeCalls)
@@ -147,7 +147,6 @@ func TestSyncJSONObserver(t *testing.T) {
 		"--config", writeTestConfig(t, testConfig()),
 		"--output", "json",
 		"sync", "mydb",
-		"--yes",
 	)
 	require.NoError(t, err)
 	assert.Empty(t, errOut)
@@ -168,7 +167,6 @@ func TestSyncQuietSuppressesObserver(t *testing.T) {
 		"--config", writeTestConfig(t, testConfig()),
 		"--quiet",
 		"sync", "mydb",
-		"--yes",
 	)
 	require.NoError(t, err)
 	assert.NotContains(t, out, "starting sync")
@@ -222,7 +220,7 @@ func TestSyncReturnsPlanErrorWithSecretsRedacted(t *testing.T) {
 func TestSyncReturnsExecuteErrorWithSecretsRedacted(t *testing.T) {
 	t.Parallel()
 	fake := &fakeEngine{executeErr: errors.New("execute failed with local-pass")}
-	_, _, err := executeRoot(t, appWithEngine(fake), "--config", writeTestConfig(t, testConfig()), "sync", "mydb", "--yes")
+	_, _, err := executeRoot(t, appWithEngine(fake), "--config", writeTestConfig(t, testConfig()), "sync", "mydb")
 	require.Error(t, err)
 	assert.Equal(t, 1, fake.executeCalls)
 	assert.NotContains(t, err.Error(), "local-pass")

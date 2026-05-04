@@ -532,7 +532,6 @@ func (a App) startSyncCmd() tea.Cmd {
 					Threads:          cfg.Runtime.Threads,
 					Mode:             engine.Mode(cfg.Runtime.Engine),
 					UseSystemPgtools: cfg.Runtime.UseSystemPgtools,
-					Yes:              true,
 				})
 				if err != nil {
 					done <- SyncFinishedMsg{Err: err}

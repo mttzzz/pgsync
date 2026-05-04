@@ -32,7 +32,7 @@ func (m *TargetManager) ResetDatabase(ctx context.Context, local config.Connecti
 		return err
 	}
 
-	endpoint := pgdb.EndpointFromConfig(local, maintenanceDatabase(local))
+	endpoint := pgdb.EndpointFromConfig(local, maintenanceDatabase(local, targetDatabase))
 	conn, err := m.Connector.Connect(ctx, endpoint)
 	if err != nil {
 		return targetConnectError(err, endpoint)
@@ -61,11 +61,17 @@ func ApplySQL(ctx context.Context, conn pgdb.CopyConn, section SchemaSection, sq
 	return nil
 }
 
-func maintenanceDatabase(local config.Connection) string {
-	if strings.TrimSpace(local.Database) == "" {
-		return "postgres"
+/* maintenanceDatabase picks the database used for admin operations on the
+ * local server (DROP/CREATE, extension preflight). It must differ from the
+ * sync target, otherwise PostgreSQL refuses DROP DATABASE with SQLSTATE 55006.
+ * If local.Database is set to a third name, honor it as a custom maintenance
+ * database; otherwise fall back to the always-present "postgres" database. */
+func maintenanceDatabase(local config.Connection, target string) string {
+	db := strings.TrimSpace(local.Database)
+	if db != "" && !strings.EqualFold(db, strings.TrimSpace(target)) {
+		return db
 	}
-	return local.Database
+	return "postgres"
 }
 
 func quoteResetDatabaseName(database string) (string, string, error) {

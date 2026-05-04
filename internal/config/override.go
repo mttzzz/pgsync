@@ -11,11 +11,6 @@ import (
  * Config. Empty values are ignored, so partial env merges with file config.
  */
 func ApplyEnv(cfg Config, env map[string]string) (Config, error) {
-	type binding struct {
-		key string
-		set func(string) error
-	}
-
 	mustInt := func(target *int) func(string) error {
 		return func(s string) error {
 			value, err := strconv.Atoi(s)
@@ -43,6 +38,28 @@ func ApplyEnv(cfg Config, env map[string]string) (Config, error) {
 		}
 	}
 
+	var err error
+	cfg, err = applyConventionalEnv(cfg, env)
+	if err != nil {
+		return Config{}, err
+	}
+
+	var bindErr error
+	cfg, bindErr = applyPGSyncBindings(cfg, env, mustInt, mustBool, mustStr)
+	if bindErr != nil {
+		return Config{}, bindErr
+	}
+	return cfg, nil
+}
+
+/* applyConventionalEnv applies generic conventions: DB_DATABASE (Laravel/Symfony)
+ * fills only the database name; POSTGRES_URL fills the entire local connection.
+ * Applied in this order so a full URL overrides DB_DATABASE when both are set. */
+func applyConventionalEnv(cfg Config, env map[string]string) (Config, error) {
+	if dbName := strings.TrimSpace(env["DB_DATABASE"]); dbName != "" {
+		cfg.Local.Database = dbName
+		cfg.Runtime.DefaultDatabase = dbName
+	}
 	if rawURL := strings.TrimSpace(env["POSTGRES_URL"]); rawURL != "" {
 		var err error
 		cfg, err = applyPostgresURL(cfg, rawURL)
@@ -50,7 +67,20 @@ func ApplyEnv(cfg Config, env map[string]string) (Config, error) {
 			return Config{}, fmt.Errorf("env POSTGRES_URL: %w", err)
 		}
 	}
+	return cfg, nil
+}
 
+func applyPGSyncBindings(
+	cfg Config,
+	env map[string]string,
+	mustInt func(*int) func(string) error,
+	mustBool func(*bool) func(string) error,
+	mustStr func(*string) func(string) error,
+) (Config, error) {
+	type binding struct {
+		key string
+		set func(string) error
+	}
 	bindings := []binding{
 		{"PGSYNC_REMOTE_HOST", mustStr(&cfg.Remote.Host)},
 		{"PGSYNC_REMOTE_PORT", mustInt(&cfg.Remote.Port)},

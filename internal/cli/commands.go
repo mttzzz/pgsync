@@ -19,9 +19,6 @@ import (
 // ErrNotImplemented marks commands that are intentionally unavailable in Phase 2.
 var ErrNotImplemented = errors.New("not implemented in Phase 2")
 
-// ErrConfirmationRequired marks sync executions that need an explicit --yes.
-var ErrConfirmationRequired = errors.New("confirmation required")
-
 // App contains injectable CLI dependencies.
 type App struct {
 	EngineFactory func(*slog.Logger) (engine.Engine, error)

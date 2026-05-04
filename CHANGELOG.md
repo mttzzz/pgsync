@@ -4,6 +4,18 @@ All notable changes to pgsync. Format: [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Changed
+- `pgsync sync` no longer requires `--yes`; the `--yes` flag has been removed.
+- Local maintenance connection for target reset now falls back to the `postgres`
+  database whenever `local.Database` matches the sync target, fixing
+  `cannot drop the currently open database` (SQLSTATE 55006) when
+  `POSTGRES_URL` is used.
+
+### Added
+- `DB_DATABASE` env (Laravel/Symfony convention) sets the local target database
+  name when `POSTGRES_URL` is not present; `POSTGRES_URL` still wins when both
+  are set.
+
 ### Added — Phase 4: Embedded pg_tools, benchmarks, release pipeline, updater
 - `internal/engine/pgtools`: PostgreSQL tools manifest parser, build-tagged embedded payloads, verified extraction cache, macOS signing hook, and embedded-by-default locator with system override.
 - `embed/pgtools-manifest.toml`: PostgreSQL 18 platform manifest scaffold.

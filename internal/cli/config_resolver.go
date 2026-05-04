@@ -35,7 +35,6 @@ type FlagOverrides struct {
 type SyncFlags struct {
 	Tables  []string
 	DryRun  bool
-	Yes     bool
 	Analyze bool
 }
 
@@ -91,7 +90,6 @@ func PlanOptionsFromConfig(cfg config.Config, db string, syncFlags SyncFlags) (e
 		Mode:              engine.Mode(cfg.Runtime.Engine),
 		UseSystemPgtools:  cfg.Runtime.UseSystemPgtools,
 		DryRun:            syncFlags.DryRun,
-		Yes:               syncFlags.Yes,
 		ConcurrentIndexes: cfg.Runtime.ConcurrentIndexes,
 		Analyze:           syncFlags.Analyze,
 	}
