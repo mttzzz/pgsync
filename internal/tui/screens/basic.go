@@ -797,9 +797,6 @@ func renderHeader(opts HeaderOptions) string {
 	}
 	lines = append(lines, headerEndpointInline("REMOTE", opts.Config.Remote, nil, textWidth))
 	localExtras := []headerField{{Label: "workers", Value: ui.FormatCount(opts.Config.Runtime.Threads), Style: styles.Primary}}
-	if elapsed := elapsedHeaderValue(opts); elapsed != "" {
-		localExtras = append(localExtras, headerField{Label: "elapsed", Value: elapsed, Style: styles.Primary})
-	}
 	lines = append(lines, headerEndpointInline("LOCAL", opts.Config.Local, localExtras, textWidth))
 	return styles.Header.Width(styleWidth).Render(strings.Join(lines, "\n"))
 }
@@ -906,17 +903,6 @@ func dashFallback(value string) string {
 		return "—"
 	}
 	return value
-}
-
-func elapsedHeaderValue(opts HeaderOptions) string {
-	if !opts.Running || opts.Started.IsZero() {
-		return ""
-	}
-	now := opts.Now
-	if now.IsZero() {
-		now = time.Now()
-	}
-	return ui.FormatDurationTenths(now.Sub(opts.Started))
 }
 
 func badge(label string, style lipgloss.Style) string {
