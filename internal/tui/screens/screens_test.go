@@ -31,10 +31,10 @@ func TestStaticAndBasicScreens(t *testing.T) {
 	assert.Contains(t, DatabaseList(nil, errors.New("boom")).View(), "boom")
 	assert.Contains(t, DatabaseList([]models.Database{{Name: "db", SizeBytes: 1024, TableCount: 3}}, nil).View(), "1.0 KB")
 	assert.Contains(t, DatabaseList([]models.Database{{Name: "db", SizeBytes: 1024, TableCount: 3}}, nil).View(), "▸")
-	assert.Contains(t, TablesPick(nil).View(), "No user tables")
-	assert.Contains(t, TablesPick([]models.Table{{Schema: "public", Name: "users", Rows: 2, SizeBytes: 2048}}).View(), `"public"."users"`)
-	assert.Contains(t, ConfirmPlan(nil).View(), "No sync targets")
-	assert.Contains(t, ConfirmPlan(&models.SyncPlan{Database: "db", Tables: []models.Table{{Name: "x"}}, Engine: "native"}).View(), "native")
+	assert.Contains(t, ConfirmPlan(PlanReviewOptions{}).View(), "No sync targets")
+	assert.Contains(t, ConfirmPlan(PlanReviewOptions{Databases: []models.Database{{Name: "db", SizeBytes: 2048, TableCount: 1}}, Engine: "native"}).View(), "native")
+	assert.Contains(t, ConfirmPlan(PlanReviewOptions{Databases: []models.Database{{Name: "alpha", SizeBytes: 1024}, {Name: "beta", SizeBytes: 2048}}, Engine: "native"}).View(), "alpha")
+	assert.Contains(t, ConfirmPlan(PlanReviewOptions{Databases: []models.Database{{Name: "alpha", SizeBytes: 1024}, {Name: "beta", SizeBytes: 2048}}, Engine: "native"}).View(), "beta")
 	assert.Contains(t, Progress("copy", 42).View(), "42.0%")
 	assert.Contains(t, Result(nil).View(), "No sync result")
 	assert.Contains(t, Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0), RowsCopied: 3, TablesCopied: 1, BytesCopied: 1024, Err: errors.New("bad")}).View(), "bad")
@@ -45,8 +45,7 @@ func TestScreensFitNarrowViewport(t *testing.T) {
 	const narrowWidth = 60
 	cfg := validConfigForScreens()
 	assertMaxNarrowLineWidth(t, DatabaseList([]models.Database{{Name: "very_long_database_name", SizeBytes: 1024, TableCount: 3}}, nil, DatabaseListOptions{Width: narrowWidth, Height: 24, Config: cfg}).View())
-	assertMaxNarrowLineWidth(t, TablesPick([]models.Table{{Schema: "public", Name: "very_long_table_name", Rows: 2, SizeBytes: 2048}}, TableListOptions{Database: "db", Width: narrowWidth, Height: 24, Config: cfg}).View())
-	assertMaxNarrowLineWidth(t, ConfirmPlan(&models.SyncPlan{Database: "db", Tables: []models.Table{{Name: "x"}}, Engine: "native"}, HeaderOptions{Width: narrowWidth, Config: cfg}).View())
+	assertMaxNarrowLineWidth(t, ConfirmPlan(PlanReviewOptions{Header: HeaderOptions{Width: narrowWidth, Config: cfg}, Databases: []models.Database{{Name: "db", SizeBytes: 1024, TableCount: 1}}, Engine: "native"}).View())
 	assertMaxNarrowLineWidth(t, ProgressDashboard(ProgressSnapshot{Header: HeaderOptions{Width: narrowWidth, Config: cfg}, Stage: "copy", OverallPercent: 42, AnimatedPercent: 42, Now: time.Now()}).View())
 	assertMaxNarrowLineWidth(t, Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0), RowsCopied: 3, TablesCopied: 1, BytesCopied: 1024}, ResultOptions{Header: HeaderOptions{Width: narrowWidth, Config: cfg}}).View())
 }
@@ -62,7 +61,6 @@ func assertMaxNarrowLineWidth(t *testing.T, view string) {
 func TestZoneIdentifiers(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "db-row:3", DatabaseRowZone(3))
-	assert.Equal(t, "table-row:4", TableRowZone(4))
 	assert.Equal(t, "action:confirm", ActionZone(ActionConfirm))
 }
 

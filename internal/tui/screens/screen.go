@@ -18,8 +18,6 @@ const (
 	ConfigEditorID ID = "config-editor"
 	// DatabaseListID identifies database selection.
 	DatabaseListID ID = "database-list"
-	// TablesPickID identifies table selection.
-	TablesPickID ID = "tables-pick"
 	// ConfirmPlanID identifies plan confirmation.
 	ConfirmPlanID ID = "confirm-plan"
 	// ProgressID identifies sync progress.

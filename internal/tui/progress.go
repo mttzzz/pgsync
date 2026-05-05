@@ -17,8 +17,11 @@ type LiveProgress struct {
 	StartedAt            time.Time
 	Now                  time.Time
 	CurrentTable         string
+	CurrentDatabase      string
 	CurrentStartedAt     time.Time
 	Stage                string
+	DBIndex              int
+	DBTotal              int
 	TablesDone           int
 	TablesTotal          int
 	RowsCopied           int64
@@ -40,11 +43,12 @@ type LiveProgress struct {
 	Events               []screens.ProgressEventRow
 	TableResults         []screens.TableResultRow
 	planTables           map[string]models.Table
+	seenDatabases        map[string]bool
 }
 
-// NewLiveProgress initializes progress aggregation from a sync plan.
+// NewLiveProgress initializes progress aggregation from a single sync plan.
 func NewLiveProgress(plan *models.SyncPlan, now time.Time) LiveProgress {
-	progress := LiveProgress{StartedAt: now, Now: now, planTables: map[string]models.Table{}}
+	progress := LiveProgress{StartedAt: now, Now: now, planTables: map[string]models.Table{}, seenDatabases: map[string]bool{}}
 	if plan == nil {
 		return progress
 	}
@@ -54,6 +58,18 @@ func NewLiveProgress(plan *models.SyncPlan, now time.Time) LiveProgress {
 		progress.planTables[key] = table
 		progress.RowsEstimated += table.Rows
 		progress.BytesEstimated += table.SizeBytes
+	}
+	return progress
+}
+
+// NewLiveProgressForQueue initializes progress aggregation for a multi-DB queue.
+// TablesTotal/BytesEstimated come from the catalog DB stats since per-table plans
+// are built lazily during execution.
+func NewLiveProgressForQueue(queue []models.Database, now time.Time) LiveProgress {
+	progress := LiveProgress{StartedAt: now, Now: now, planTables: map[string]models.Table{}, seenDatabases: map[string]bool{}, DBTotal: len(queue)}
+	for _, db := range queue {
+		progress.TablesTotal += db.TableCount
+		progress.BytesEstimated += db.SizeBytes
 	}
 	return progress
 }
@@ -77,6 +93,25 @@ func (p *LiveProgress) Apply(event engine.Event, now time.Time) {
 	}
 	if event.BytesPerSec > 0 {
 		p.BytesPerSec = event.BytesPerSec
+	}
+	if event.Database != "" && event.Database != p.CurrentDatabase {
+		if p.seenDatabases == nil {
+			p.seenDatabases = map[string]bool{}
+		}
+		if !p.seenDatabases[event.Database] {
+			p.seenDatabases[event.Database] = true
+			p.DBIndex = len(p.seenDatabases)
+			if p.DBTotal > 0 && p.DBIndex > p.DBTotal {
+				p.DBTotal = p.DBIndex
+			}
+		}
+		p.CurrentDatabase = event.Database
+		p.CurrentTable = ""
+		p.TablePercent = 0
+		p.CurrentRows = 0
+		p.CurrentBytes = 0
+		p.CurrentRowsEstimate = 0
+		p.CurrentBytesEstimate = 0
 	}
 
 	switch event.Name {
@@ -128,7 +163,10 @@ func (p *LiveProgress) Tick(now time.Time) {
 
 // Snapshot converts aggregate state to the screen renderer DTO.
 func (p LiveProgress) Snapshot(cfg config.Config, width int) screens.ProgressSnapshot {
-	database := cfg.Runtime.DefaultDatabase
+	database := p.CurrentDatabase
+	if database == "" {
+		database = cfg.Runtime.DefaultDatabase
+	}
 	return screens.ProgressSnapshot{
 		Header:             screens.HeaderOptions{Config: cfg, Database: database, Width: width, Running: true, Started: p.StartedAt, Now: p.Now},
 		Stage:              p.Stage,
@@ -136,6 +174,9 @@ func (p LiveProgress) Snapshot(cfg config.Config, width int) screens.ProgressSna
 		StartedAt:          p.StartedAt,
 		CurrentStartedAt:   p.CurrentStartedAt,
 		Now:                p.Now,
+		DBIndex:            p.DBIndex,
+		DBTotal:            p.DBTotal,
+		CurrentDatabase:    p.CurrentDatabase,
 		TablesDone:         p.TablesDone,
 		TablesTotal:        p.TablesTotal,
 		RowsCopied:         p.RowsCopied,

@@ -18,12 +18,6 @@ type DatabasesLoadedMsg struct {
 	Err       error
 }
 
-// TablesLoadedMsg reports table-list loading completion.
-type TablesLoadedMsg struct {
-	Tables []models.Table
-	Err    error
-}
-
 type syncStartedMsg struct {
 	events <-chan engine.Event
 	done   <-chan SyncFinishedMsg
@@ -35,6 +29,7 @@ type syncProgressMsg struct {
 
 // SyncFinishedMsg reports sync completion.
 type SyncFinishedMsg struct {
-	Result *models.SyncResult
-	Err    error
+	Result  *models.SyncResult
+	Results []*models.SyncResult
+	Err     error
 }

@@ -64,8 +64,8 @@ func TestAppKeysAndMessages(t *testing.T) {
 	assert.Equal(t, 1, app.State().DatabaseIndex)
 	model, _ = app.Update(key("enter"))
 	app = model.(App)
-	assert.Equal(t, screens.TablesPickID, app.State().Current)
-	assert.Equal(t, "beta", app.State().Config.Runtime.DefaultDatabase)
+	assert.Equal(t, screens.ConfirmPlanID, app.State().Current)
+	assert.True(t, app.State().SelectedDatabases["beta"])
 
 	model, _ = app.Update(key("s"))
 	app = model.(App)
@@ -118,7 +118,6 @@ func TestScreenBody(t *testing.T) {
 		screens.ConfigEditorID,
 		screens.MainMenuID,
 		screens.DatabaseListID,
-		screens.TablesPickID,
 		screens.ConfirmPlanID,
 		screens.ProgressID,
 		screens.ResultID,
@@ -129,30 +128,30 @@ func TestScreenBody(t *testing.T) {
 	}
 }
 
-func TestTablesPickerBlocksConfirmWhileLoading(t *testing.T) {
+func TestDatabaseListEnterGoesToConfirmPlanWithMultipleSelection(t *testing.T) {
 	t.Parallel()
-	app := NewAppWithServices(validCfg(), Services{Catalog: &fakeCatalogService{tables: []models.Table{{Schema: "public", Name: "users"}}}})
-	model, _ := app.Update(DatabasesLoadedMsg{Databases: []models.Database{{Name: "app"}}})
+	app := NewAppWithServices(validCfg(), Services{Catalog: &fakeCatalogService{}})
+	model, _ := app.Update(DatabasesLoadedMsg{Databases: []models.Database{
+		{Name: "alpha", SizeBytes: 1000, TableCount: 3},
+		{Name: "beta", SizeBytes: 2000, TableCount: 5},
+	}})
 	app = model.(App)
 
-	model, cmd := app.Update(key("enter"))
+	model, _ = app.Update(key(" "))
 	app = model.(App)
-	require.NotNil(t, cmd)
-	loadCmd := cmd
-	assert.Equal(t, screens.TablesPickID, app.State().Current)
-	assert.True(t, app.State().TablesLoading)
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	app = model.(App)
+	model, _ = app.Update(key(" "))
+	app = model.(App)
+	assert.True(t, app.State().SelectedDatabases["alpha"])
+	assert.True(t, app.State().SelectedDatabases["beta"])
 
-	model, cmd = app.Update(key("enter"))
-	app = model.(App)
-	require.Nil(t, cmd)
-	assert.Equal(t, screens.TablesPickID, app.State().Current)
-	assert.Contains(t, app.State().Status, "still loading")
-
-	model, _ = app.Update(loadCmd())
-	app = model.(App)
-	model, _ = app.Update(key("enter"))
+	model, _ = app.Update(key("y"))
 	app = model.(App)
 	assert.Equal(t, screens.ConfirmPlanID, app.State().Current)
+	view := app.View()
+	assert.Contains(t, view, "alpha")
+	assert.Contains(t, view, "beta")
 }
 
 func TestAppLoadsDatabasesThroughCatalogService(t *testing.T) {
@@ -172,17 +171,13 @@ func TestAppLoadsDatabasesThroughCatalogService(t *testing.T) {
 	assert.Contains(t, app.State().Status, "Loaded")
 }
 
-func TestCurrentPlanTablesFiltersSelectedTables(t *testing.T) {
+func TestSelectedDatabaseListPreservesDisplayOrder(t *testing.T) {
 	t.Parallel()
-	tables := []models.Table{{Schema: "public", Name: "users"}, {Schema: "public", Name: "orders"}}
 	app := NewApp(validCfg())
-	assert.Nil(t, app.currentPlanTables())
-
-	app.state.Tables = tables
-	app.state.SelectedTables = nil
-	assert.Equal(t, tables, app.currentPlanTables())
-	app.state.SelectedTables = map[string]bool{"public.orders": true}
-	assert.Equal(t, []models.Table{tables[1]}, app.currentPlanTables())
+	app.state.Databases = []models.Database{{Name: "alpha"}, {Name: "beta"}, {Name: "gamma"}}
+	app.state.SelectedDatabases = map[string]bool{"gamma": true, "alpha": true}
+	queue := app.selectedDatabaseList()
+	assert.Equal(t, []string{"alpha", "gamma"}, []string{queue[0].Name, queue[1].Name})
 }
 
 func TestNextScreen(t *testing.T) {
@@ -190,7 +185,6 @@ func TestNextScreen(t *testing.T) {
 	assert.Equal(t, screens.MainMenuID, nextScreen(screens.SettingsCheckID))
 	assert.Equal(t, screens.DatabaseListID, nextScreen(screens.MainMenuID))
 	assert.Equal(t, screens.ConfirmPlanID, nextScreen(screens.DatabaseListID))
-	assert.Equal(t, screens.ConfirmPlanID, nextScreen(screens.TablesPickID))
 	assert.Equal(t, screens.ProgressID, nextScreen(screens.ConfirmPlanID))
 	assert.Equal(t, screens.ResultID, nextScreen(screens.ProgressID))
 	assert.Equal(t, screens.ResultID, nextScreen(screens.ResultID))

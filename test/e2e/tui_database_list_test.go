@@ -47,16 +47,12 @@ func TestTUIDatabaseListFlow(t *testing.T) {
 	assert.Contains(t, app.View(), "billing")
 
 	model, updateCmd = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	require.NotNil(t, updateCmd)
-	app = model.(tui.App)
-	assert.Equal(t, screens.TablesPickID, app.State().Current)
-	assert.Equal(t, "billing", app.State().Config.Runtime.DefaultDatabase)
-	assert.Contains(t, app.State().Status, "billing")
-
-	model, updateCmd = app.Update(updateCmd())
 	require.Nil(t, updateCmd)
 	app = model.(tui.App)
-	assert.Contains(t, app.View(), "Tables")
+	assert.Equal(t, screens.ConfirmPlanID, app.State().Current)
+	assert.True(t, app.State().SelectedDatabases["billing"])
+	assert.Contains(t, app.View(), "Plan Review")
+	assert.Contains(t, app.View(), "billing")
 }
 
 type e2eCatalog struct {

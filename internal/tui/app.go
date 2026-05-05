@@ -27,12 +27,8 @@ type State struct {
 	Databases         []models.Database
 	DatabaseIndex     int
 	SelectedDatabases map[string]bool
-	Tables            []models.Table
-	SelectedTables    map[string]bool
-	TableIndex        int
-	TablesLoading     bool
-	TablesErr         error
 	Result            *models.SyncResult
+	Results           []*models.SyncResult
 	ProgressEvent     engine.Event
 	Progress          LiveProgress
 	ProgressEvents    <-chan engine.Event
@@ -55,7 +51,7 @@ func NewApp(cfg config.Config) App {
 
 // NewAppWithServices creates the default TUI app model with production or test services.
 func NewAppWithServices(cfg config.Config, services Services) App {
-	app := App{state: State{Current: screens.SettingsCheckID, Config: cfg, SelectedDatabases: map[string]bool{}, SelectedTables: map[string]bool{}, Width: 120, Height: 36}, services: services}
+	app := App{state: State{Current: screens.SettingsCheckID, Config: cfg, SelectedDatabases: map[string]bool{}, Width: 120, Height: 36}, services: services}
 	if err := config.Validate(cfg); err != nil {
 		app.state.Current = screens.ConfigEditorID
 		app.state.Err = err
@@ -88,8 +84,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.onSettings(m)
 	case DatabasesLoadedMsg:
 		return a.onDatabasesLoaded(m), nil
-	case TablesLoadedMsg:
-		return a.onTablesLoaded(m), nil
 	case syncStartedMsg:
 		a.state.ProgressEvents = m.events
 		a.state.SyncDone = m.done
@@ -111,6 +105,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state.ActiveTab = 0
 		a.state.Err = m.Err
 		a.state.Result = m.Result
+		a.state.Results = m.Results
 		if m.Result != nil {
 			a.state.Status = fmt.Sprintf("Готово: %s", m.Result.Duration())
 		}
@@ -147,17 +142,15 @@ func (a App) screenBody() string {
 		return screens.MainMenu(a.state.MenuIndex).View()
 	case screens.DatabaseListID:
 		return screens.DatabaseList(a.state.Databases, a.state.Err, screens.DatabaseListOptions{SelectedIndex: a.state.DatabaseIndex, Checked: a.state.SelectedDatabases, Width: a.state.Width, Height: a.state.Height, Status: a.state.Status, Config: a.state.Config}).View()
-	case screens.TablesPickID:
-		return screens.TablesPick(a.state.Tables, screens.TableListOptions{Database: a.state.Config.Runtime.DefaultDatabase, SelectedIndex: a.state.TableIndex, Checked: a.state.SelectedTables, Loading: a.state.TablesLoading, Err: a.state.TablesErr, Width: a.state.Width, Height: a.state.Height, Status: a.state.Status, Config: a.state.Config}).View()
 	case screens.ConfirmPlanID:
-		return screens.ConfirmPlan(a.currentPlan(), screens.HeaderOptions{Config: a.state.Config, Database: a.state.Config.Runtime.DefaultDatabase, Width: a.state.Width, Height: a.state.Height}).View()
+		return screens.ConfirmPlan(a.planReviewOptions()).View()
 	case screens.ProgressID:
 		snapshot := a.state.Progress.Snapshot(a.state.Config, a.state.Width)
 		snapshot.Header.Height = a.state.Height
 		snapshot.Tab = a.state.ActiveTab
 		return screens.ProgressDashboard(snapshot).View()
 	case screens.ResultID:
-		return screens.Result(a.state.Result, screens.ResultOptions{Header: screens.HeaderOptions{Config: a.state.Config, Database: a.state.Config.Runtime.DefaultDatabase, Width: a.state.Width, Height: a.state.Height}, Tab: a.state.ActiveTab, Tables: a.state.Progress.TableResults}).View()
+		return screens.Result(a.aggregateResult(), screens.ResultOptions{Header: screens.HeaderOptions{Config: a.state.Config, Database: a.headerDatabase(), Width: a.state.Width, Height: a.state.Height}, Tab: a.state.ActiveTab, Tables: a.state.Progress.TableResults}).View()
 	default:
 		return fmt.Sprintf("Экран: %s", a.state.Current)
 	}
@@ -208,23 +201,6 @@ func (a App) onDatabasesLoaded(msg DatabasesLoadedMsg) App {
 	return a
 }
 
-func (a App) onTablesLoaded(msg TablesLoadedMsg) App {
-	a.state.TablesLoading = false
-	a.state.TablesErr = msg.Err
-	if msg.Err != nil {
-		a.state.Status = "Не удалось загрузить таблицы"
-		return a
-	}
-	a.state.Tables = msg.Tables
-	a.state.SelectedTables = map[string]bool{}
-	for _, table := range msg.Tables {
-		a.state.SelectedTables[tableKey(table)] = true
-	}
-	a.state.TableIndex = clampIndex(a.state.TableIndex, len(msg.Tables))
-	a.state.Status = fmt.Sprintf("Loaded %d tables from %s", len(msg.Tables), a.state.Config.Runtime.DefaultDatabase)
-	return a
-}
-
 //nolint:gocyclo // Central Bubble Tea router keeps screen dispatch explicit.
 func (a App) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.state.Current == screens.MainMenuID {
@@ -232,9 +208,6 @@ func (a App) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if a.state.Current == screens.DatabaseListID {
 		return a.onDatabaseListKey(msg)
-	}
-	if a.state.Current == screens.TablesPickID {
-		return a.onTablesKey(msg)
 	}
 	if a.state.Current == screens.ConfirmPlanID {
 		return a.onConfirmKey(msg)
@@ -307,78 +280,16 @@ func (a App) onDatabaseListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		a.state.Quit = true
 		return a, tea.Quit
-	case "y":
-		if len(a.state.SelectedDatabases) > 0 {
-			a.state.Current = screens.ConfirmPlanID
-		}
-	case "enter", "right", "l":
-		if db, ok := a.currentDatabase(); ok {
-			a.state.Config.Runtime.DefaultDatabase = db.Name
-			a.state.Current = screens.TablesPickID
-			a.state.Tables = nil
-			a.state.SelectedTables = map[string]bool{}
-			a.state.TableIndex = 0
-			a.state.TablesErr = nil
-			a.state.TablesLoading = true
-			a.state.Status = "Loading tables from " + db.Name + "..."
+	case "y", "enter", "right", "l":
+		if db, ok := a.currentDatabase(); ok && len(a.state.SelectedDatabases) == 0 {
 			if a.state.SelectedDatabases == nil {
 				a.state.SelectedDatabases = map[string]bool{}
 			}
 			a.state.SelectedDatabases[db.Name] = true
-			if a.services.Catalog != nil {
-				return a, loadTablesCmd(a.services.Catalog, db.Name)
-			}
 		}
-	}
-	return a, nil
-}
-
-//nolint:gocyclo,gocognit // Table picker intentionally maps many single-key actions.
-func (a App) onTablesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "left", "h":
-		a.state.Current = screens.DatabaseListID
-	case "up", "k":
-		a.state.TableIndex = clampIndex(a.state.TableIndex-1, len(a.state.Tables))
-	case "down", "j", "tab":
-		a.state.TableIndex = clampIndex(a.state.TableIndex+1, len(a.state.Tables))
-	case "space", " ":
-		if table, ok := a.currentTable(); ok {
-			if a.state.SelectedTables == nil {
-				a.state.SelectedTables = map[string]bool{}
-			}
-			key := tableKey(table)
-			a.state.SelectedTables[key] = !a.state.SelectedTables[key]
-			if !a.state.SelectedTables[key] {
-				delete(a.state.SelectedTables, key)
-			}
+		if len(a.state.SelectedDatabases) > 0 {
+			a.state.Current = screens.ConfirmPlanID
 		}
-	case "a":
-		a.state.SelectedTables = map[string]bool{}
-		for _, table := range a.state.Tables {
-			a.state.SelectedTables[tableKey(table)] = true
-		}
-	case "c":
-		a.state.SelectedTables = map[string]bool{}
-	case "r":
-		database := a.state.Config.Runtime.DefaultDatabase
-		if database != "" && a.services.Catalog != nil {
-			a.state.TablesLoading = true
-			a.state.TablesErr = nil
-			a.state.Status = "Reloading tables from " + database + "..."
-			return a, loadTablesCmd(a.services.Catalog, database)
-		}
-	case "s":
-		return a.openSettings()
-	case "q", "ctrl+c":
-		a.state.Quit = true
-		return a, tea.Quit
-	case "y", "enter":
-		if a.state.TablesLoading {
-			a.state.Status = "Tables are still loading; wait before confirming"
-			return a, nil
-		}
-		a.state.Current = screens.ConfirmPlanID
 	}
 	return a, nil
 }
@@ -386,21 +297,25 @@ func (a App) onTablesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a App) onConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "left", "h":
-		if a.state.Config.Runtime.DefaultDatabase != "" {
-			a.state.Current = screens.TablesPickID
-		} else {
-			a.state.Current = screens.DatabaseListID
-		}
+		a.state.Current = screens.DatabaseListID
+	case "s":
+		return a.openSettings()
 	case "enter", "y":
+		queue := a.selectedDatabaseList()
+		if len(queue) == 0 {
+			a.state.Current = screens.DatabaseListID
+			a.state.Status = "Выберите хотя бы одну базу"
+			return a, nil
+		}
 		a.state.Current = screens.ProgressID
 		a.state.Running = true
 		a.state.ActiveTab = 0
 		a.state.Status = "Sync queued"
 		now := time.Now()
-		a.state.Progress = NewLiveProgress(a.currentPlan(), now)
-		a.state.ProgressEvent = engine.Event{Name: engine.EventSyncStart, Stage: "planning", Database: a.state.Config.Runtime.DefaultDatabase, Time: now, Tables: len(a.currentPlanTables()), Engine: a.state.Config.Runtime.Engine}
+		a.state.Progress = NewLiveProgressForQueue(queue, now)
+		a.state.ProgressEvent = engine.Event{Name: engine.EventSyncStart, Stage: "planning", Database: queue[0].Name, Time: now, Engine: a.state.Config.Runtime.Engine}
 		a.state.Progress.Apply(a.state.ProgressEvent, now)
-		return a, a.startSyncCmd()
+		return a, a.startSyncCmd(queue)
 	case "q", "ctrl+c":
 		a.state.Quit = true
 		return a, tea.Quit
@@ -483,13 +398,6 @@ func loadDatabasesCmd(catalog CatalogService) tea.Cmd {
 	}
 }
 
-func loadTablesCmd(catalog CatalogService, database string) tea.Cmd {
-	return func() tea.Msg {
-		tables, err := catalog.ListTables(context.Background(), database)
-		return TablesLoadedMsg{Tables: tables, Err: err}
-	}
-}
-
 func (a App) currentDatabase() (models.Database, bool) {
 	if len(a.state.Databases) == 0 {
 		return models.Database{}, false
@@ -498,70 +406,138 @@ func (a App) currentDatabase() (models.Database, bool) {
 	return a.state.Databases[index], true
 }
 
-func (a App) currentTable() (models.Table, bool) {
-	if len(a.state.Tables) == 0 {
-		return models.Table{}, false
+// selectedDatabaseList returns selected DBs in display order with their stats.
+func (a App) selectedDatabaseList() []models.Database {
+	if len(a.state.SelectedDatabases) == 0 {
+		return nil
 	}
-	index := clampIndex(a.state.TableIndex, len(a.state.Tables))
-	return a.state.Tables[index], true
+	out := make([]models.Database, 0, len(a.state.SelectedDatabases))
+	for _, db := range a.state.Databases {
+		if a.state.SelectedDatabases[db.Name] {
+			out = append(out, db)
+		}
+	}
+	return out
 }
 
-func (a App) startSyncCmd() tea.Cmd {
-	plan := a.currentPlan()
+// planReviewOptions builds the multi-DB plan review screen options from current state.
+func (a App) planReviewOptions() screens.PlanReviewOptions {
+	queue := a.selectedDatabaseList()
+	header := screens.HeaderOptions{Config: a.state.Config, Width: a.state.Width, Height: a.state.Height}
+	if len(queue) > 0 {
+		header.Database = queue[0].Name
+	}
+	return screens.PlanReviewOptions{
+		Header:           header,
+		Databases:        queue,
+		Engine:           a.state.Config.Runtime.Engine,
+		Threads:          a.state.Config.Runtime.Threads,
+		UseSystemPgtools: a.state.Config.Runtime.UseSystemPgtools,
+	}
+}
+
+func (a App) headerDatabase() string {
+	if a.state.Result != nil && a.state.Result.Database != "" {
+		return a.state.Result.Database
+	}
+	if len(a.state.Results) > 0 {
+		return fmt.Sprintf("%d databases", len(a.state.Results))
+	}
+	return a.state.Config.Runtime.DefaultDatabase
+}
+
+// aggregateResult combines per-DB results into a single SyncResult for the report screen.
+func (a App) aggregateResult() *models.SyncResult {
+	if len(a.state.Results) <= 1 {
+		return a.state.Result
+	}
+	combined := &models.SyncResult{Stages: map[string]time.Duration{}}
+	for i, r := range a.state.Results {
+		if r == nil {
+			continue
+		}
+		if i == 0 || r.StartedAt.Before(combined.StartedAt) {
+			combined.StartedAt = r.StartedAt
+		}
+		if r.FinishedAt.After(combined.FinishedAt) {
+			combined.FinishedAt = r.FinishedAt
+		}
+		combined.BytesCopied += r.BytesCopied
+		combined.RowsCopied += r.RowsCopied
+		combined.TablesCopied += r.TablesCopied
+		for stage, d := range r.Stages {
+			combined.Stages[stage] += d
+		}
+		if r.Err != nil && combined.Err == nil {
+			combined.Err = r.Err
+		}
+	}
+	combined.Database = fmt.Sprintf("%d databases", len(a.state.Results))
+	return combined
+}
+
+func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 	planner := a.services.Planner
 	executor := a.services.Executor
 	cfg := a.state.Config
-	tables := selectedTableNames(a.state.Tables, a.state.SelectedTables)
 	return func() tea.Msg {
-		events := make(chan engine.Event, 128)
+		events := make(chan engine.Event, 256)
 		done := make(chan SyncFinishedMsg, 1)
 		go func() {
 			defer close(events)
 			if executor == nil {
-				done <- SyncFinishedMsg{Result: nil, Err: fmt.Errorf("sync executor is not configured")}
+				done <- SyncFinishedMsg{Err: fmt.Errorf("sync executor is not configured")}
 				return
 			}
 			ctx := context.Background()
-			if planner != nil {
-				var err error
-				plan, err = planner.Plan(ctx, engine.PlanOptions{
-					Remote:           cfg.Remote,
-					Local:            cfg.Local,
-					Database:         cfg.Runtime.DefaultDatabase,
-					Tables:           tables,
-					Threads:          cfg.Runtime.Threads,
-					Mode:             engine.Mode(cfg.Runtime.Engine),
-					UseSystemPgtools: cfg.Runtime.UseSystemPgtools,
+			results := make([]*models.SyncResult, 0, len(queue))
+			var lastResult *models.SyncResult
+			var lastErr error
+			for _, db := range queue {
+				select {
+				case events <- engine.Event{Time: time.Now(), Name: engine.EventSyncStart, Stage: "planning", Database: db.Name, Engine: cfg.Runtime.Engine}:
+				default:
+				}
+				var plan *models.SyncPlan
+				if planner != nil {
+					p, err := planner.Plan(ctx, engine.PlanOptions{
+						Remote:           cfg.Remote,
+						Local:            cfg.Local,
+						Database:         db.Name,
+						Threads:          cfg.Runtime.Threads,
+						Mode:             engine.Mode(cfg.Runtime.Engine),
+						UseSystemPgtools: cfg.Runtime.UseSystemPgtools,
+					})
+					if err != nil {
+						lastErr = err
+						break
+					}
+					plan = p
+				}
+				dbName := db.Name
+				observer := engine.ObserverFunc(func(ctx context.Context, event engine.Event) {
+					if event.Database == "" {
+						event.Database = dbName
+					}
+					select {
+					case events <- event:
+					case <-ctx.Done():
+					}
 				})
+				result, err := executor.Execute(ctx, plan, observer)
+				if result != nil {
+					results = append(results, result)
+					lastResult = result
+				}
 				if err != nil {
-					done <- SyncFinishedMsg{Err: err}
-					return
+					lastErr = err
+					break
 				}
 			}
-			observer := engine.ObserverFunc(func(ctx context.Context, event engine.Event) {
-				select {
-				case events <- event:
-				case <-ctx.Done():
-				}
-			})
-			result, err := executor.Execute(ctx, plan, observer)
-			done <- SyncFinishedMsg{Result: result, Err: err}
+			done <- SyncFinishedMsg{Result: lastResult, Results: results, Err: lastErr}
 		}()
 		return syncStartedMsg{events: events, done: done}
 	}
-}
-
-func selectedTableNames(tables []models.Table, selected map[string]bool) []string {
-	if len(tables) == 0 || len(selected) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(selected))
-	for _, table := range tables {
-		if selected[tableKey(table)] {
-			names = append(names, table.Schema+"."+table.Name)
-		}
-	}
-	return names
 }
 
 func waitSyncProgressCmd(events <-chan engine.Event, done <-chan SyncFinishedMsg) tea.Cmd {
@@ -588,31 +564,6 @@ func progressStatus(event engine.Event) string {
 	return event.Name
 }
 
-func (a App) currentPlan() *models.SyncPlan {
-	database := a.state.Config.Runtime.DefaultDatabase
-	if database == "" {
-		if db, ok := a.currentDatabase(); ok {
-			database = db.Name
-		}
-	}
-	if database == "" {
-		return nil
-	}
-	selectedTables := make([]models.Table, 0, len(a.state.Tables))
-	if len(a.state.Tables) > 0 {
-		for _, table := range a.state.Tables {
-			if a.state.SelectedTables == nil || a.state.SelectedTables[tableKey(table)] {
-				selectedTables = append(selectedTables, table)
-			}
-		}
-	}
-	return &models.SyncPlan{Database: database, Tables: selectedTables, Threads: a.state.Config.Runtime.Threads, Engine: a.state.Config.Runtime.Engine, Remote: a.state.Config.Remote, Local: a.state.Config.Local, UseSystemPgtools: a.state.Config.Runtime.UseSystemPgtools}
-}
-
-func tableKey(table models.Table) string {
-	return table.Schema + "." + table.Name
-}
-
 func clampIndex(index, length int) int {
 	if length <= 0 {
 		return 0
@@ -628,7 +579,7 @@ func clampIndex(index, length int) int {
 
 func isStyledScreen(id screens.ID) bool {
 	switch id {
-	case screens.DatabaseListID, screens.TablesPickID, screens.ConfirmPlanID, screens.ProgressID, screens.ResultID:
+	case screens.DatabaseListID, screens.ConfirmPlanID, screens.ProgressID, screens.ResultID:
 		return true
 	default:
 		return false
@@ -642,8 +593,6 @@ func nextScreen(id screens.ID) screens.ID {
 	case screens.MainMenuID:
 		return screens.DatabaseListID
 	case screens.DatabaseListID:
-		return screens.ConfirmPlanID
-	case screens.TablesPickID:
 		return screens.ConfirmPlanID
 	case screens.ConfirmPlanID:
 		return screens.ProgressID
