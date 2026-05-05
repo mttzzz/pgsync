@@ -17,6 +17,7 @@ import (
 	"github.com/mttzzz/pgsync/internal/engine"
 	"github.com/mttzzz/pgsync/internal/models"
 	"github.com/mttzzz/pgsync/internal/pgdb"
+	"github.com/mttzzz/pgsync/internal/pgschema"
 )
 
 func TestPlanBuildsTopoSortedClosureAndSequences(t *testing.T) {
@@ -159,6 +160,47 @@ func TestPlanReturnsCloseErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.NotNil(t, plan)
 	assert.ErrorIs(t, err, closeErr)
+}
+
+func TestPlanReturnsCountExactRowsError(t *testing.T) {
+	t.Parallel()
+	conn := nativeCatalogConn(nativeCatalogData{tables: []models.Table{nativeTable("users", 1, 1)}})
+	conn.queryRowResults = nil // count step finds no scripted rows → error
+	eng := nativeTestEngine(t, &nativeFakeConnector{conns: []pgdb.CopyConn{conn}})
+
+	plan, err := eng.Plan(context.Background(), nativeValidPlanOptions())
+
+	require.Error(t, err)
+	assert.Nil(t, plan)
+	assert.Contains(t, err.Error(), "count rows")
+}
+
+func TestCountExactRowsHandlesEmptyAndNilInputs(t *testing.T) {
+	t.Parallel()
+	out, err := countExactRows(context.Background(), nil, []models.Table{nativeTable("x", 0, 0)})
+	require.NoError(t, err)
+	assert.Len(t, out, 1, "nil catalog returns input untouched")
+
+	out, err = countExactRows(context.Background(), &pgschema.Service{}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, out)
+}
+
+func TestCountExactRowsRejectsBadlyQuotedTable(t *testing.T) {
+	t.Parallel()
+	conn := nativeCatalogConn(nativeCatalogData{})
+	catalog := pgschema.NewService(conn)
+	_, err := countExactRows(context.Background(), catalog, []models.Table{{Schema: "", Name: ""}})
+	require.Error(t, err)
+}
+
+func TestCountExactRowsPropagatesQueryError(t *testing.T) {
+	t.Parallel()
+	conn := nativeCatalogConn(nativeCatalogData{})
+	conn.queryRowResults = nil // force "unexpected query row" error
+	catalog := pgschema.NewService(conn)
+	_, err := countExactRows(context.Background(), catalog, []models.Table{{Schema: "public", Name: "users"}})
+	require.Error(t, err)
 }
 
 func TestSequencesForTablesHandlesEmptyInputs(t *testing.T) {
@@ -433,11 +475,18 @@ type nativeCatalogData struct {
 }
 
 func nativeCatalogConn(data nativeCatalogData) *nativeFakeConn {
-	return &nativeFakeConn{queryResults: []nativeQueryResult{
-		{rows: nativeTableRows(data.tables)},
-		{rows: nativeDepRows(data.deps)},
-		{rows: nativeSequenceRows(data.sequences)},
-	}}
+	rowCounts := make([]int64, 0, len(data.tables))
+	for _, table := range data.tables {
+		rowCounts = append(rowCounts, table.Rows)
+	}
+	return &nativeFakeConn{
+		queryResults: []nativeQueryResult{
+			{rows: nativeTableRows(data.tables)},
+			{rows: nativeDepRows(data.deps)},
+			{rows: nativeSequenceRows(data.sequences)},
+		},
+		queryRowResults: rowCounts,
+	}
 }
 
 func nativeTableRows(tables []models.Table) [][]any {
@@ -511,11 +560,12 @@ type nativeQueryResult struct {
 }
 
 type nativeFakeConn struct {
-	name         string
-	queryResults []nativeQueryResult
-	execSQL      []string
-	closeCount   int
-	closeErr     error
+	name            string
+	queryResults    []nativeQueryResult
+	queryRowResults []int64
+	execSQL         []string
+	closeCount      int
+	closeErr        error
 }
 
 func (c *nativeFakeConn) Query(_ context.Context, _ string, _ ...any) (pgdb.Rows, error) {
@@ -531,7 +581,12 @@ func (c *nativeFakeConn) Query(_ context.Context, _ string, _ ...any) (pgdb.Rows
 }
 
 func (c *nativeFakeConn) QueryRow(_ context.Context, _ string, _ ...any) pgdb.Row {
-	return nativeFakeRow{err: errors.New("unexpected query row")}
+	if len(c.queryRowResults) == 0 {
+		return nativeFakeRow{err: errors.New("unexpected query row")}
+	}
+	value := c.queryRowResults[0]
+	c.queryRowResults = c.queryRowResults[1:]
+	return nativeFakeRow{values: []any{value}}
 }
 
 func (c *nativeFakeConn) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
@@ -611,10 +666,26 @@ func nativeAssign(dest any, value any) error {
 }
 
 type nativeFakeRow struct {
-	err error
+	values []any
+	err    error
 }
 
-func (r nativeFakeRow) Scan(_ ...any) error { return r.err }
+func (r nativeFakeRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	for i, value := range r.values {
+		if i >= len(dest) {
+			break
+		}
+		if target, ok := dest[i].(*int64); ok {
+			if v, vok := value.(int64); vok {
+				*target = v
+			}
+		}
+	}
+	return nil
+}
 
 type nativeStageRecorder struct {
 	calls       []string

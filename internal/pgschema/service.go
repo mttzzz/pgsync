@@ -28,6 +28,16 @@ func (s *Service) ListTables(ctx context.Context) ([]models.Table, error) {
 	return queryCatalog(ctx, s.q, "list tables", ListTablesSQL(), scanTable)
 }
 
+/* CountRows returns the exact row count for a table via SELECT count(*).
+ * quotedRelation must already be safely quoted (use pgdb.QuoteQualified). */
+func (s *Service) CountRows(ctx context.Context, quotedRelation string) (int64, error) {
+	var n int64
+	if err := s.q.QueryRow(ctx, CountRowsSQL(quotedRelation)).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count rows in %s: %w", quotedRelation, err)
+	}
+	return n, nil
+}
+
 /* ListFKDeps lists foreign-key edges from child tables to parent tables. */
 func (s *Service) ListFKDeps(ctx context.Context) ([]models.FKDep, error) {
 	return queryCatalog(ctx, s.q, "list foreign keys", ListFKDepsSQL(), scanFKDep)

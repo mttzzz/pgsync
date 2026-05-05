@@ -93,6 +93,13 @@ func ListTablesSQL() string {
 	return listTablesSQL
 }
 
+/* CountRowsSQL returns an exact-row-count query for the given quoted relation.
+ * The caller is responsible for properly quoting the schema and table name
+ * (e.g. via pgdb.QuoteQualified) — this function does not interpolate values. */
+func CountRowsSQL(quotedRelation string) string {
+	return "SELECT count(*) FROM " + quotedRelation
+}
+
 /* ListFKDepsSQL returns the query used to list foreign-key dependencies between user tables. */
 func ListFKDepsSQL() string {
 	return listFKDepsSQL

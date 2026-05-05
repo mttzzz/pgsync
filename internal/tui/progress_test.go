@@ -197,6 +197,17 @@ func TestRegisterDBLazilyInitializesSeenMap(t *testing.T) {
 	assert.Contains(t, progress.planTables, "public.users")
 }
 
+func TestApplyClampsRowsEstimateWhenActualExceeds(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
+	progress := NewLiveProgress(&models.SyncPlan{Database: "app", Tables: []models.Table{{Schema: "public", Name: "users", Rows: 10, SizeBytes: 100}}}, now)
+	// Reltuples said 10, but actual count is 25 — denominator must clamp upward.
+	progress.Apply(engine.Event{Name: engine.EventTableCopyDone, Database: "app", Table: "public.users", Rows: 25, Bytes: 200, Duration: time.Second}, now.Add(time.Second))
+	assert.Equal(t, int64(25), progress.QueueRowsEstimated, "queue estimate clamps up to actual")
+	assert.Equal(t, int64(25), progress.DBRowsEstimated, "DB estimate clamps up to actual")
+	assert.Equal(t, 100.0, progress.QueuePercent(), "bar caps at 100% after clamp")
+}
+
 func TestRecordTableResultFallsBackToCurrentDatabase(t *testing.T) {
 	t.Parallel()
 	progress := LiveProgress{CurrentDatabase: "fallback"}

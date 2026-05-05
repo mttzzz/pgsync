@@ -118,6 +118,10 @@ func (e *NativeEngine) Plan(ctx context.Context, opts engine.PlanOptions) (plan 
 	if err != nil {
 		return nil, err
 	}
+	ordered, err = countExactRows(ctx, catalog, ordered)
+	if err != nil {
+		return nil, err
+	}
 
 	return &models.SyncPlan{
 		Database:         opts.Database,
@@ -194,6 +198,27 @@ func productionStages(deps Dependencies) nativeStages {
 		copyTables:      CopyTables,
 		repairSequences: RepairSequences,
 	}
+}
+
+// countExactRows replaces approximate reltuples-based estimates with exact
+// SELECT count(*) values. Runs serially on the catalog connection — multi-DB
+// sync benefits from parallelism at the queue level, not per-table.
+func countExactRows(ctx context.Context, catalog *pgschema.Service, tables []models.Table) ([]models.Table, error) {
+	if catalog == nil || len(tables) == 0 {
+		return tables, nil
+	}
+	for index := range tables {
+		quoted, err := pgdb.QuoteQualified(tables[index])
+		if err != nil {
+			return nil, err
+		}
+		count, err := catalog.CountRows(ctx, quoted)
+		if err != nil {
+			return nil, err
+		}
+		tables[index].Rows = count
+	}
+	return tables, nil
 }
 
 func listCatalog(ctx context.Context, catalog *pgschema.Service) ([]models.Table, []models.FKDep, []models.Sequence, error) {

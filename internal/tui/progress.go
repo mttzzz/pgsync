@@ -190,6 +190,15 @@ func (p *LiveProgress) Apply(event engine.Event, now time.Time) {
 		p.queueCompletedBytes += event.Bytes
 		p.dbCompletedRows += event.Rows
 		p.dbCompletedBytes += event.Bytes
+		// Catalog reltuples is approximate; clamp denominator upward when
+		// reality exceeds estimate so bars never show >100% and the displayed
+		// "X/Y" stays consistent (Y >= X).
+		if p.queueCompletedRows > p.QueueRowsEstimated {
+			p.QueueRowsEstimated = p.queueCompletedRows
+		}
+		if p.dbCompletedRows > p.DBRowsEstimated {
+			p.DBRowsEstimated = p.dbCompletedRows
+		}
 		p.QueueTablesDone++
 		p.DBTablesDone++
 		p.recordTableResult(event)

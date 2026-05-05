@@ -520,7 +520,7 @@ func (a App) aggregateResult() *models.SyncResult {
 	return combined
 }
 
-//nolint:gocognit,gocyclo // Sequential planner+executor loop with per-DB error handling stays in one place for readability.
+//nolint:gocognit,gocyclo // Pre-plans all DBs to know queue totals upfront, then executes one by one.
 func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 	planner := a.services.Planner
 	executor := a.services.Executor
@@ -535,13 +535,10 @@ func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 				return
 			}
 			ctx := context.Background()
-			results := make([]*models.SyncResult, 0, len(queue))
-			var lastResult *models.SyncResult
-			var lastErr error
-			for _, db := range queue {
-				var plan *models.SyncPlan
-				if planner != nil {
-					p, err := planner.Plan(ctx, engine.PlanOptions{
+			plans := make([]*models.SyncPlan, 0, len(queue))
+			if planner != nil {
+				for _, db := range queue {
+					plan, err := planner.Plan(ctx, engine.PlanOptions{
 						Remote:           cfg.Remote,
 						Local:            cfg.Local,
 						Database:         db.Name,
@@ -550,12 +547,10 @@ func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 						UseSystemPgtools: cfg.Runtime.UseSystemPgtools,
 					})
 					if err != nil {
-						lastErr = err
-						break
+						done <- SyncFinishedMsg{Err: err}
+						return
 					}
-					plan = p
-				}
-				if plan != nil {
+					plans = append(plans, plan)
 					var estRows, estBytes int64
 					for _, t := range plan.Tables {
 						estRows += t.Rows
@@ -566,6 +561,15 @@ func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 					default:
 					}
 				}
+			} else {
+				for range queue {
+					plans = append(plans, nil)
+				}
+			}
+			results := make([]*models.SyncResult, 0, len(queue))
+			var lastResult *models.SyncResult
+			var lastErr error
+			for i, db := range queue {
 				dbName := db.Name
 				observer := engine.ObserverFunc(func(ctx context.Context, event engine.Event) {
 					if event.Database == "" {
@@ -576,7 +580,7 @@ func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 					case <-ctx.Done():
 					}
 				})
-				result, err := executor.Execute(ctx, plan, observer)
+				result, err := executor.Execute(ctx, plans[i], observer)
 				if result != nil {
 					results = append(results, result)
 					lastResult = result

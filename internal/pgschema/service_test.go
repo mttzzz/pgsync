@@ -79,6 +79,25 @@ func TestServiceListSequencesMapsOwnership(t *testing.T) {
 	assert.True(t, rows.closed)
 }
 
+func TestServiceCountRowsReturnsExactCount(t *testing.T) {
+	t.Parallel()
+	querier := &fakeQuerier{rowValue: 12345}
+	got, err := pgschema.NewService(querier).CountRows(context.Background(), `"public"."users"`)
+	require.NoError(t, err)
+	assert.Equal(t, int64(12345), got)
+	assert.Equal(t, pgschema.CountRowsSQL(`"public"."users"`), querier.queryRowSQL)
+}
+
+func TestServiceCountRowsWrapsScanError(t *testing.T) {
+	t.Parallel()
+	scanErr := errors.New("count scan failed")
+	querier := &fakeQuerier{rowErr: scanErr}
+	_, err := pgschema.NewService(querier).CountRows(context.Background(), `"public"."users"`)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, scanErr)
+	assert.Contains(t, err.Error(), `count rows in "public"."users"`)
+}
+
 func TestServiceQueryErrorPropagatesWithOperationName(t *testing.T) {
 	t.Parallel()
 	queryErr := errors.New("query failed")
@@ -122,9 +141,12 @@ func TestServiceRowsErrAfterIterationPropagates(t *testing.T) {
 }
 
 type fakeQuerier struct {
-	rows pgdb.Rows
-	err  error
-	sql  string
+	rows        pgdb.Rows
+	err         error
+	sql         string
+	queryRowSQL string
+	rowValue    int64
+	rowErr      error
 }
 
 func (q *fakeQuerier) Query(_ context.Context, sql string, _ ...any) (pgdb.Rows, error) {
@@ -132,17 +154,29 @@ func (q *fakeQuerier) Query(_ context.Context, sql string, _ ...any) (pgdb.Rows,
 	return q.rows, q.err
 }
 
-func (q *fakeQuerier) QueryRow(_ context.Context, _ string, _ ...any) pgdb.Row {
-	return fakeRow{}
+func (q *fakeQuerier) QueryRow(_ context.Context, sql string, _ ...any) pgdb.Row {
+	q.queryRowSQL = sql
+	return fakeRow{value: q.rowValue, err: q.rowErr}
 }
 
 func (q *fakeQuerier) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
 	return pgconn.CommandTag{}, nil
 }
 
-type fakeRow struct{}
+type fakeRow struct {
+	value int64
+	err   error
+}
 
-func (fakeRow) Scan(_ ...any) error {
+func (r fakeRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	if len(dest) > 0 {
+		if target, ok := dest[0].(*int64); ok {
+			*target = r.value
+		}
+	}
 	return nil
 }
 

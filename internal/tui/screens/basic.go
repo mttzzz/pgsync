@@ -597,6 +597,11 @@ func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 
 	separator := styles.Muted.Render(strings.Repeat("─", barWidth+8))
 	nowLine := renderNowLine(snapshot, bodyWidth)
+	// Single-DB mode collapses the bottom tier — top bar already represents
+	// the only DB, so the duplicate would just be visual noise.
+	if snapshot.DBTotal <= 1 {
+		return strings.Join([]string{queueBar, dotJoin(queueStatus...), queueBytes, separator, nowLine}, "\n")
+	}
 	parts := []string{queueBar, dotJoin(queueStatus...), queueBytes, separator, dbBar, dotJoin(dbStatus...), nowLine}
 	return strings.Join(parts, "\n")
 }
