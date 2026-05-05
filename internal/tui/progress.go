@@ -76,7 +76,7 @@ func NewLiveProgressForQueue(queue []models.Database, now time.Time) LiveProgres
 
 // Apply records a new engine event and updates derived metrics.
 //
-//nolint:gocyclo // Event aggregation has one explicit branch per engine event type.
+//nolint:gocyclo,gocognit // Event aggregation has one explicit branch per engine event type plus DB-switch reset.
 func (p *LiveProgress) Apply(event engine.Event, now time.Time) {
 	if p.StartedAt.IsZero() {
 		p.StartedAt = now

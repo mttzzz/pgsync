@@ -271,14 +271,6 @@ func renderCell(value string, width int, style lipgloss.Style, alignRight bool) 
 	return style.Render(value)
 }
 
-func rangeFooter(start int, end int, total int) string {
-	styles := ui.NewStyles()
-	if total <= 0 {
-		return styles.Muted.Render("Showing 0 of 0")
-	}
-	return styles.Muted.Render(fmt.Sprintf("Showing %s-%s of %s", ui.FormatCount(start+1), ui.FormatCount(end), ui.FormatCount(total)))
-}
-
 func databaseRangeFooter(dbs []models.Database, checked map[string]bool, start int, end int, widths ...int) string {
 	styles := ui.NewStyles()
 	selected, bytes, tables := selectedDatabaseStats(dbs, checked)

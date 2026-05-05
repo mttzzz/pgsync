@@ -476,6 +476,7 @@ func (a App) aggregateResult() *models.SyncResult {
 	return combined
 }
 
+//nolint:gocognit,gocyclo // Sequential planner+executor loop with per-DB error handling stays in one place for readability.
 func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 	planner := a.services.Planner
 	executor := a.services.Executor

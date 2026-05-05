@@ -62,6 +62,11 @@ func TestLiveProgressCoversZeroStateAndListCaps(t *testing.T) {
 	tickingOnly.Tick(now)
 	assert.Equal(t, now, tickingOnly.StartedAt)
 
+	var zero LiveProgress
+	zero.Apply(engine.Event{Name: engine.EventSyncStart, Database: "alpha"}, now)
+	assert.Equal(t, "alpha", zero.CurrentDatabase)
+	assert.Equal(t, 1, zero.DBIndex)
+
 	for i := 0; i < 129; i++ {
 		progress.prependEvent(engine.Event{Name: engine.EventTableCopyProgress, Time: now})
 	}
@@ -113,4 +118,55 @@ func TestLiveProgressFallbacksAndEventDetails(t *testing.T) {
 	assert.Equal(t, "value", emptyValue("value", "fallback"))
 	assert.Equal(t, 2, maxInt(2, 1))
 	assert.Equal(t, 2, maxInt(1, 2))
+}
+
+func TestLiveProgressForQueueAdvancesDBIndexAndResetsTableState(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
+	queue := []models.Database{
+		{Name: "alpha", SizeBytes: 1024, TableCount: 2},
+		{Name: "beta", SizeBytes: 2048, TableCount: 3},
+	}
+	progress := NewLiveProgressForQueue(queue, now)
+	assert.Equal(t, 2, progress.DBTotal)
+	assert.Equal(t, 5, progress.TablesTotal)
+	assert.Equal(t, int64(3072), progress.BytesEstimated)
+	assert.NotNil(t, progress.seenDatabases)
+
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "alpha", Time: now}, now)
+	assert.Equal(t, 1, progress.DBIndex)
+	assert.Equal(t, "alpha", progress.CurrentDatabase)
+
+	progress.Apply(engine.Event{Name: engine.EventTableCopyStart, Database: "alpha", Table: "public.users", Estimated: 500}, now.Add(time.Second))
+	progress.Apply(engine.Event{Name: engine.EventTableCopyProgress, Database: "alpha", Table: "public.users", Bytes: 250, Percent: 50}, now.Add(2*time.Second))
+	assert.Equal(t, 50.0, progress.TablePercent)
+	assert.Equal(t, "public.users", progress.CurrentTable)
+	assert.Equal(t, int64(250), progress.CurrentBytes)
+
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "beta", Time: now.Add(3 * time.Second)}, now.Add(3*time.Second))
+	assert.Equal(t, 2, progress.DBIndex)
+	assert.Equal(t, "beta", progress.CurrentDatabase)
+	assert.Equal(t, 0.0, progress.TablePercent)
+	assert.Equal(t, "", progress.CurrentTable)
+	assert.Equal(t, int64(0), progress.CurrentBytes)
+	assert.Equal(t, int64(0), progress.CurrentRowsEstimate)
+	assert.Equal(t, int64(0), progress.CurrentBytesEstimate)
+
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "alpha", Time: now.Add(4 * time.Second)}, now.Add(4*time.Second))
+	assert.Equal(t, 2, progress.DBIndex, "revisiting alpha must not advance DBIndex")
+	assert.Equal(t, "alpha", progress.CurrentDatabase)
+
+	snapshot := progress.Snapshot(config.Config{}, 120)
+	assert.Equal(t, 2, snapshot.DBTotal)
+	assert.Equal(t, "alpha", snapshot.Header.Database)
+}
+
+func TestLiveProgressForQueueGrowsDBTotalWhenEventsExceedQueue(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
+	progress := NewLiveProgressForQueue([]models.Database{{Name: "alpha"}}, now)
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "alpha"}, now)
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "beta"}, now.Add(time.Second))
+	assert.Equal(t, 2, progress.DBIndex)
+	assert.Equal(t, 2, progress.DBTotal, "DBTotal grows when more DBs arrive than expected")
 }
