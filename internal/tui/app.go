@@ -31,7 +31,7 @@ type State struct {
 	Results           []*models.SyncResult
 	ProgressEvent     engine.Event
 	Progress          LiveProgress
-	ProgressEvents    <-chan engine.Event
+	ProgressEvents    <-chan tea.Msg
 	SyncDone          <-chan SyncFinishedMsg
 	ActiveTab         int
 	Width             int
@@ -92,6 +92,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state.ProgressEvent = m.Event
 		a.state.Progress.Apply(m.Event, time.Now())
 		a.state.Status = progressStatus(m.Event)
+		return a, waitSyncProgressCmd(a.state.ProgressEvents, a.state.SyncDone)
+	case dbPlanReadyMsg:
+		a.state.Progress.RegisterDB(m.Database, m.Tables, m.Rows, m.Bytes)
 		return a, waitSyncProgressCmd(a.state.ProgressEvents, a.state.SyncDone)
 	case progressTickMsg:
 		if a.state.Running && a.state.Current == screens.ProgressID {
@@ -314,7 +317,6 @@ func (a App) onConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		now := time.Now()
 		a.state.Progress = NewLiveProgressForQueue(queue, now)
 		a.state.ProgressEvent = engine.Event{Name: engine.EventSyncStart, Stage: "planning", Database: queue[0].Name, Time: now, Engine: a.state.Config.Runtime.Engine}
-		a.state.Progress.Apply(a.state.ProgressEvent, now)
 		return a, a.startSyncCmd(queue)
 	case "q", "ctrl+c":
 		a.state.Quit = true
@@ -339,9 +341,9 @@ func (a App) onProgressKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a App) onResultKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "tab", "right", "l":
-		a.state.ActiveTab = (a.state.ActiveTab + 1) % 3
+		a.state.ActiveTab = (a.state.ActiveTab + 1) % 2
 	case "shift+tab", "left", "h":
-		a.state.ActiveTab = (a.state.ActiveTab + 2) % 3
+		a.state.ActiveTab = (a.state.ActiveTab + 1) % 2
 	case "enter", "q", "esc", "ctrl+c":
 		a.state.Quit = true
 		return a, tea.Quit
@@ -482,7 +484,7 @@ func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 	executor := a.services.Executor
 	cfg := a.state.Config
 	return func() tea.Msg {
-		events := make(chan engine.Event, 256)
+		events := make(chan tea.Msg, 256)
 		done := make(chan SyncFinishedMsg, 1)
 		go func() {
 			defer close(events)
@@ -495,10 +497,6 @@ func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 			var lastResult *models.SyncResult
 			var lastErr error
 			for _, db := range queue {
-				select {
-				case events <- engine.Event{Time: time.Now(), Name: engine.EventSyncStart, Stage: "planning", Database: db.Name, Engine: cfg.Runtime.Engine}:
-				default:
-				}
 				var plan *models.SyncPlan
 				if planner != nil {
 					p, err := planner.Plan(ctx, engine.PlanOptions{
@@ -515,13 +513,24 @@ func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 					}
 					plan = p
 				}
+				if plan != nil {
+					var estRows, estBytes int64
+					for _, t := range plan.Tables {
+						estRows += t.Rows
+						estBytes += t.SizeBytes
+					}
+					select {
+					case events <- dbPlanReadyMsg{Database: db.Name, Tables: plan.Tables, Rows: estRows, Bytes: estBytes}:
+					default:
+					}
+				}
 				dbName := db.Name
 				observer := engine.ObserverFunc(func(ctx context.Context, event engine.Event) {
 					if event.Database == "" {
 						event.Database = dbName
 					}
 					select {
-					case events <- event:
+					case events <- syncProgressMsg{Event: event}:
 					case <-ctx.Done():
 					}
 				})
@@ -541,12 +550,12 @@ func (a App) startSyncCmd(queue []models.Database) tea.Cmd {
 	}
 }
 
-func waitSyncProgressCmd(events <-chan engine.Event, done <-chan SyncFinishedMsg) tea.Cmd {
+func waitSyncProgressCmd(events <-chan tea.Msg, done <-chan SyncFinishedMsg) tea.Cmd {
 	return func() tea.Msg {
 		select {
-		case event, ok := <-events:
+		case msg, ok := <-events:
 			if ok {
-				return syncProgressMsg{Event: event}
+				return msg
 			}
 			return <-done
 		case msg := <-done:

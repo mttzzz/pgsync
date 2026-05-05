@@ -3,6 +3,7 @@ package screens
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,34 +32,51 @@ type HeaderOptions struct {
 	Now      time.Time
 }
 
-// ProgressSnapshot is a presentation-ready live sync state.
+// ProgressSnapshot is a presentation-ready live sync state with three tiers:
+// queue (whole run), current DB, and current in-flight table.
 type ProgressSnapshot struct {
-	Header             HeaderOptions
-	Tab                int
-	Stage              string
-	CurrentTable       string
-	CurrentDatabase    string
-	DBIndex            int
-	DBTotal            int
-	StartedAt          time.Time
-	CurrentStartedAt   time.Time
-	Now                time.Time
-	TablesDone         int
-	TablesTotal        int
-	RowsCopied         int64
-	RowsEstimated      int64
-	BytesCopied        int64
-	BytesEstimated     int64
-	BytesPerSec        float64
-	TableRows          int64
-	TableRowsEstimate  int64
-	TableBytes         int64
-	TableBytesEstimate int64
-	TablePercent       float64
-	OverallPercent     float64
-	AnimatedPercent    float64
-	Errors             int
-	Events             []ProgressEventRow
+	Header HeaderOptions
+	Tab    int
+	Stage  string
+	Errors int
+
+	StartedAt time.Time
+	Now       time.Time
+
+	// queue (across all DBs in this run)
+	DBIndex              int
+	DBTotal              int
+	QueueBytesCopied     int64
+	QueueBytesEstimated  int64
+	QueueRowsCopied      int64
+	QueueRowsEstimated   int64
+	QueueTablesDone      int
+	QueueTablesTotal     int
+	QueuePercent         float64
+	QueueAnimatedPercent float64
+
+	// current DB
+	CurrentDatabase   string
+	DBBytesCopied     int64
+	DBBytesEstimated  int64
+	DBRowsCopied      int64
+	DBRowsEstimated   int64
+	DBTablesDone      int
+	DBTablesTotal     int
+	DBPercent         float64
+	DBAnimatedPercent float64
+
+	// current table (in flight)
+	CurrentTable         string
+	CurrentStartedAt     time.Time
+	CurrentRows          int64
+	CurrentRowsEstimate  int64
+	CurrentBytes         int64
+	CurrentBytesEstimate int64
+	CurrentPercent       float64
+	BytesPerSec          float64
+
+	Events []ProgressEventRow
 }
 
 // ProgressEventRow describes one row in the live event log.
@@ -79,6 +97,7 @@ type ResultOptions struct {
 
 // TableResultRow describes a table in the final report.
 type TableResultRow struct {
+	Database string
 	Table    string
 	Rows     int64
 	Bytes    int64
@@ -511,12 +530,10 @@ func renderResult(result *models.SyncResult, opts ResultOptions) string {
 	viewport, bodyWidth := layoutWidths(opts.Header.Width)
 	opts.Header.Title = "Sync Report"
 	opts.Header.Width = bodyWidth
-	tabs := tabBar([]string{"Summary", "Stages", "Tables"}, opts.Tab)
+	tabs := tabBar([]string{"Summary", "Tables"}, opts.Tab)
 	var content string
-	switch normalizedTab(opts.Tab, 3) {
+	switch normalizedTab(opts.Tab, 2) {
 	case 1:
-		content = panel("", renderStageTimings(result, bodyWidth), bodyWidth)
-	case 2:
 		content = panel("", renderTableResults(opts.Tables, bodyWidth), bodyWidth)
 	default:
 		content = panel("", renderResultSummary(result), bodyWidth)
@@ -524,96 +541,90 @@ func renderResult(result *models.SyncResult, opts ResultOptions) string {
 	return page(viewport, renderHeader(opts.Header), tabs, content, footer(actionsLine([]actionLabel{{"Tab", "switch"}, {"Enter/Q", "quit"}, {"B", "back"}, {"R", "again"}}, bodyWidth), bodyWidth))
 }
 
-/* renderProgressOverview emits a compact, vertically dense status block:
- *   1. overall progress bar with percent and stage
- *   2. table progress (done/total · errors · elapsed · ETA)
- *   3. byte/row totals across all tables
- *   4. current table name as a divider
- *   5. per-table progress bar with percent
- *   6. per-table byte/row totals
- * Wider terminals (>=78 cols) keep all rows; narrower terminals split the
- * combined rows in two so nothing wraps. Total height: 6 lines wide / 9 lines
- * narrow, vs ~18 lines in the previous layout. */
+/* renderProgressOverview emits two stacked tiers:
+ *   queue tier: bar, db i/N · tables done/total · rows X/Y · err N · elapsed · ETA · speed · COPY x/y
+ *   db tier:    bar, db_name · tables done/total · COPY x/y · rows X/Y
+ *   now line:   schema.table · COPY x/y · rows/s · elapsed (only while a table is in flight)
+ * "rows X/0" is suppressed when the estimate is unknown (queue not yet planned). */
 func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 	styles := ui.NewStyles()
 	elapsed := time.Duration(0)
 	if !snapshot.StartedAt.IsZero() {
 		elapsed = snapshot.Now.Sub(snapshot.StartedAt)
 	}
-	stage := emptyFallback(snapshot.Stage, "waiting")
-	current := emptyFallback(snapshot.CurrentTable, "—")
-	overall := snapshot.AnimatedPercent
-	if overall == 0 {
-		overall = snapshot.OverallPercent
+	barWidth := maxInt(bodyWidth-14, 8)
+
+	queuePct := snapshot.QueueAnimatedPercent
+	if queuePct == 0 {
+		queuePct = snapshot.QueuePercent
 	}
-	eta := estimateETA(snapshot.BytesCopied, snapshot.BytesEstimated, snapshot.BytesPerSec)
-	rowsRate := 0.0
-	if elapsed > 0 {
-		rowsRate = float64(snapshot.RowsCopied) / elapsed.Seconds()
+	dbPct := snapshot.DBAnimatedPercent
+	if dbPct == 0 {
+		dbPct = snapshot.DBPercent
 	}
+	queueBar := ui.ProgressBar(barWidth, queuePct) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.QueuePercent))
+	dbBar := ui.ProgressBar(barWidth, dbPct) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.DBPercent))
+
+	queueETA := estimateETA(snapshot.QueueBytesCopied, snapshot.QueueBytesEstimated, snapshot.BytesPerSec)
+	queueStatus := []string{}
+	if snapshot.DBTotal > 1 {
+		queueStatus = append(queueStatus, ui.Metric("db", fmt.Sprintf("%s/%s", ui.FormatCount(snapshot.DBIndex), ui.FormatCount(snapshot.DBTotal)), styles.Warning))
+	}
+	queueStatus = append(queueStatus,
+		ui.Metric("tables", fmt.Sprintf("%s/%s", ui.FormatCount(snapshot.QueueTablesDone), ui.FormatCount(snapshot.QueueTablesTotal)), styles.Success),
+		ui.Metric("rows", formatCounter(snapshot.QueueRowsCopied, snapshot.QueueRowsEstimated), styles.Accent),
+		ui.Metric("err", ui.FormatCount(snapshot.Errors), styles.Danger),
+		ui.Metric("elapsed", ui.FormatDurationTenths(elapsed), styles.Primary),
+		ui.Metric("ETA", queueETA, styles.Warning),
+		ui.Metric("speed", ui.FormatBytesRate(snapshot.BytesPerSec), styles.Success),
+	)
+	queueBytes := ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.QueueBytesCopied), ui.FormatBytes(snapshot.QueueBytesEstimated)), styles.Accent)
+
+	dbName := emptyFallback(snapshot.CurrentDatabase, "—")
+	dbStatus := []string{styles.Primary.Render(dbName)}
+	if snapshot.DBTablesTotal > 0 {
+		dbStatus = append(dbStatus, ui.Metric("tables", fmt.Sprintf("%s/%s", ui.FormatCount(snapshot.DBTablesDone), ui.FormatCount(snapshot.DBTablesTotal)), styles.Success))
+	}
+	dbStatus = append(dbStatus,
+		ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.DBBytesCopied), ui.FormatBytes(snapshot.DBBytesEstimated)), styles.Accent),
+		ui.Metric("rows", formatCounter(snapshot.DBRowsCopied, snapshot.DBRowsEstimated), styles.Accent),
+	)
+
+	separator := styles.Muted.Render(strings.Repeat("─", barWidth+8))
+	parts := []string{queueBar, dotJoin(queueStatus...), queueBytes, separator, dbBar, dotJoin(dbStatus...)}
+	if snapshot.CurrentTable != "" {
+		nowLine := renderNowLine(snapshot, bodyWidth)
+		parts = append(parts, nowLine)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func renderNowLine(snapshot ProgressSnapshot, bodyWidth int) string {
+	styles := ui.NewStyles()
 	tableElapsed := time.Duration(0)
 	if !snapshot.CurrentStartedAt.IsZero() {
 		tableElapsed = snapshot.Now.Sub(snapshot.CurrentStartedAt)
 	}
-
-	barWidth := maxInt(bodyWidth-14, 8)
-	tablesText := fmt.Sprintf("%s/%s", ui.FormatCount(snapshot.TablesDone), ui.FormatCount(snapshot.TablesTotal))
-	rowsText := fmt.Sprintf("%s/%s", ui.FormatInt(snapshot.RowsCopied), ui.FormatInt(snapshot.RowsEstimated))
-	tableRowsText := fmt.Sprintf("%s/%s", ui.FormatInt(snapshot.TableRows), ui.FormatInt(snapshot.TableRowsEstimate))
-
-	statusParts := []string{styles.Primary.Render(stage)}
-	if snapshot.DBTotal > 1 {
-		dbBadge := ui.Metric("db", fmt.Sprintf("%s/%s", ui.FormatCount(snapshot.DBIndex), ui.FormatCount(snapshot.DBTotal)), styles.Warning)
-		statusParts = append(statusParts, dbBadge)
+	rowsRate := 0.0
+	if tableElapsed > 0 {
+		rowsRate = float64(snapshot.CurrentRows) / tableElapsed.Seconds()
 	}
-	statusParts = append(statusParts,
-		ui.Metric("tables", tablesText, styles.Success),
-		ui.Metric("err", ui.FormatCount(snapshot.Errors), styles.Danger),
-		ui.Metric("elapsed", ui.FormatDurationTenths(elapsed), styles.Primary),
-		ui.Metric("ETA", eta, styles.Warning),
-	)
-	overallStatus := dotJoin(statusParts...)
-	overallBytes := dotJoin(
-		ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.BytesCopied), ui.FormatBytes(snapshot.BytesEstimated)), styles.Accent),
-		ui.Metric("speed", ui.FormatBytesRate(snapshot.BytesPerSec), styles.Success),
-		ui.Metric("rows", rowsText, styles.Accent),
-	)
-
-	tableLine := dotJoin(
-		styles.Accent.Render(truncate(current, maxInt(bodyWidth/2, 24))),
-		ui.Metric("elapsed", ui.FormatDurationTenths(tableElapsed), styles.Primary),
+	parts := []string{
+		styles.Accent.Render("now: " + truncate(snapshot.CurrentTable, maxInt(bodyWidth/2, 24))),
+		ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.CurrentBytes), ui.FormatBytes(snapshot.CurrentBytesEstimate)), styles.Accent),
+		ui.Metric("rows", formatCounter(snapshot.CurrentRows, snapshot.CurrentRowsEstimate), styles.Accent),
 		ui.Metric("rows/s", ui.FormatRowsRate(rowsRate), styles.Success),
-	)
-	tableBytes := dotJoin(
-		ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.TableBytes), ui.FormatBytes(snapshot.TableBytesEstimate)), styles.Accent),
-		ui.Metric("rows", tableRowsText, styles.Accent),
-	)
-
-	overallBar := ui.ProgressBar(barWidth, overall) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.OverallPercent))
-	tableBar := ui.ProgressBar(barWidth, snapshot.TablePercent) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.TablePercent))
-
-	if bodyWidth < 78 {
-		return strings.Join([]string{
-			overallBar,
-			styles.Primary.Render(stage) + styles.Muted.Render(" · ") + ui.Metric("tables", tablesText, styles.Success) + styles.Muted.Render(" · ") + ui.Metric("err", ui.FormatCount(snapshot.Errors), styles.Danger),
-			ui.Metric("elapsed", ui.FormatDurationTenths(elapsed), styles.Primary) + styles.Muted.Render(" · ") + ui.Metric("ETA", eta, styles.Warning) + styles.Muted.Render(" · ") + ui.Metric("speed", ui.FormatBytesRate(snapshot.BytesPerSec), styles.Success),
-			ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.BytesCopied), ui.FormatBytes(snapshot.BytesEstimated)), styles.Accent),
-			ui.Metric("rows", rowsText, styles.Accent),
-			styles.Muted.Render(strings.Repeat("─", barWidth+8)),
-			styles.Accent.Render(truncate(current, maxInt(bodyWidth-2, 16))),
-			tableBar,
-			tableBytes,
-		}, "\n")
+		ui.Metric("elapsed", ui.FormatDurationTenths(tableElapsed), styles.Primary),
 	}
-	return strings.Join([]string{
-		overallBar,
-		overallStatus,
-		overallBytes,
-		styles.Muted.Render(strings.Repeat("─", barWidth+8)),
-		tableBar,
-		tableLine,
-		tableBytes,
-	}, "\n")
+	return dotJoin(parts...)
+}
+
+// formatCounter renders "copied/estimated" or just "copied" if estimated <= 0.
+func formatCounter(copied, estimated int64) string {
+	if estimated <= 0 {
+		return ui.FormatInt(copied)
+	}
+	return fmt.Sprintf("%s/%s", ui.FormatInt(copied), ui.FormatInt(estimated))
 }
 
 /* dotJoin joins non-empty parts with " · " separators, themed muted. */
@@ -661,33 +672,23 @@ func renderResultSummary(result *models.SyncResult) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderStageTimings(result *models.SyncResult, width int) string {
-	styles := ui.NewStyles()
-	if result == nil || len(result.Stages) == 0 {
-		return styles.Muted.Render("No stage timing details recorded yet.")
-	}
-	lines := []string{styles.Muted.Render(fmt.Sprintf("%-28s  %12s  %s", "Stage", "Duration", "Notes")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 40)))}
-	for stage, duration := range result.Stages {
-		lines = append(lines, fmt.Sprintf("%-28s  %12s  completed", truncate(stage, 28), ui.FormatDurationTenths(duration)))
-	}
-	return strings.Join(lines, "\n")
-}
-
 func renderTableResults(rows []TableResultRow, width int) string {
 	styles := ui.NewStyles()
 	if len(rows) == 0 {
 		return styles.Muted.Render("Per-table report will appear after table metrics are collected.")
 	}
+	sorted := append([]TableResultRow(nil), rows...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Bytes > sorted[j].Bytes })
 	if width < 80 {
-		lines := []string{styles.Muted.Render(fmt.Sprintf("%-24s  %10s  %s", "Table", "Rows", "COPY")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 24)))}
-		for _, row := range rows {
-			lines = append(lines, fmt.Sprintf("%-24s  %10s  %s", truncate(row.Table, 24), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes)))
+		lines := []string{styles.Muted.Render(fmt.Sprintf("%-16s  %-22s  %10s  %s", "Database", "Table", "Rows", "COPY")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 24)))}
+		for _, row := range sorted {
+			lines = append(lines, fmt.Sprintf("%-16s  %-22s  %10s  %s", truncate(emptyFallback(row.Database, "—"), 16), truncate(row.Table, 22), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes)))
 		}
 		return strings.Join(lines, "\n")
 	}
-	lines := []string{styles.Muted.Render(fmt.Sprintf("%-32s  %14s  %12s  %10s  %s", "Table", "Rows", "COPY stream", "Duration", "Avg speed")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 40)))}
-	for _, row := range rows {
-		lines = append(lines, fmt.Sprintf("%-32s  %14s  %12s  %10s  %s", truncate(row.Table, 32), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes), ui.FormatDurationTenths(row.Duration), ui.FormatBytesRate(row.Speed)))
+	lines := []string{styles.Muted.Render(fmt.Sprintf("%-20s  %-32s  %14s  %12s  %10s  %s", "Database", "Table", "Rows", "COPY stream", "Duration", "Avg speed")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 40)))}
+	for _, row := range sorted {
+		lines = append(lines, fmt.Sprintf("%-20s  %-32s  %14s  %12s  %10s  %s", truncate(emptyFallback(row.Database, "—"), 20), truncate(row.Table, 32), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes), ui.FormatDurationTenths(row.Duration), ui.FormatBytesRate(row.Speed)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1079,7 +1080,7 @@ func ConfirmPlan(opts PlanReviewOptions) StaticScreen {
 
 // Progress renders sync progress summary.
 func Progress(stage string, percent float64) StaticScreen {
-	body := renderProgress(ProgressSnapshot{Stage: stage, OverallPercent: percent, AnimatedPercent: percent, Header: HeaderOptions{Width: 116}, Now: time.Now()})
+	body := renderProgress(ProgressSnapshot{Stage: stage, QueuePercent: percent, QueueAnimatedPercent: percent, Header: HeaderOptions{Width: 116}, Now: time.Now()})
 	return StaticScreen{ScreenID: ProgressID, Heading: "Sync Running", Body: body, Hint: "Sync is running. Press q to cancel."}
 }
 

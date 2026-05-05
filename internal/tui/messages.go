@@ -1,6 +1,8 @@
 package tui
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/mttzzz/pgsync/internal/config"
 	"github.com/mttzzz/pgsync/internal/engine"
 	"github.com/mttzzz/pgsync/internal/models"
@@ -19,12 +21,21 @@ type DatabasesLoadedMsg struct {
 }
 
 type syncStartedMsg struct {
-	events <-chan engine.Event
+	events <-chan tea.Msg
 	done   <-chan SyncFinishedMsg
 }
 
 type syncProgressMsg struct {
 	Event engine.Event
+}
+
+// dbPlanReadyMsg announces that a DB plan has been built and totals are known.
+// Emitted by startSyncCmd before invoking the executor for that DB.
+type dbPlanReadyMsg struct {
+	Database string
+	Tables   []models.Table
+	Rows     int64
+	Bytes    int64
 }
 
 // SyncFinishedMsg reports sync completion.

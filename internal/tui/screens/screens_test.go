@@ -38,6 +38,20 @@ func TestStaticAndBasicScreens(t *testing.T) {
 	assert.Contains(t, Progress("copy", 42).View(), "42.0%")
 	assert.Contains(t, Result(nil).View(), "No sync result")
 	assert.Contains(t, Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0), RowsCopied: 3, TablesCopied: 1, BytesCopied: 1024, Err: errors.New("bad")}).View(), "bad")
+
+	tablesView := Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0)}, ResultOptions{Tab: 1, Tables: []TableResultRow{
+		{Database: "alpha", Table: "public.small", Bytes: 100},
+		{Database: "beta", Table: "public.huge", Bytes: 999_999},
+		{Database: "alpha", Table: "public.mid", Bytes: 5_000},
+	}}).View()
+	assert.Contains(t, tablesView, "Database")
+	assert.Contains(t, tablesView, "alpha")
+	assert.Contains(t, tablesView, "beta")
+	hugeIdx := strings.Index(tablesView, "public.huge")
+	midIdx := strings.Index(tablesView, "public.mid")
+	smallIdx := strings.Index(tablesView, "public.small")
+	assert.Less(t, hugeIdx, midIdx, "huge appears above mid (sorted by bytes desc)")
+	assert.Less(t, midIdx, smallIdx, "mid appears above small")
 }
 
 func TestScreensFitNarrowViewport(t *testing.T) {
@@ -46,7 +60,7 @@ func TestScreensFitNarrowViewport(t *testing.T) {
 	cfg := validConfigForScreens()
 	assertMaxNarrowLineWidth(t, DatabaseList([]models.Database{{Name: "very_long_database_name", SizeBytes: 1024, TableCount: 3}}, nil, DatabaseListOptions{Width: narrowWidth, Height: 24, Config: cfg}).View())
 	assertMaxNarrowLineWidth(t, ConfirmPlan(PlanReviewOptions{Header: HeaderOptions{Width: narrowWidth, Config: cfg}, Databases: []models.Database{{Name: "db", SizeBytes: 1024, TableCount: 1}}, Engine: "native"}).View())
-	assertMaxNarrowLineWidth(t, ProgressDashboard(ProgressSnapshot{Header: HeaderOptions{Width: narrowWidth, Config: cfg}, Stage: "copy", OverallPercent: 42, AnimatedPercent: 42, Now: time.Now()}).View())
+	assertMaxNarrowLineWidth(t, ProgressDashboard(ProgressSnapshot{Header: HeaderOptions{Width: narrowWidth, Config: cfg}, Stage: "copy", QueuePercent: 42, QueueAnimatedPercent: 42, Now: time.Now()}).View())
 	assertMaxNarrowLineWidth(t, Result(&models.SyncResult{StartedAt: time.Unix(0, 0), FinishedAt: time.Unix(2, 0), RowsCopied: 3, TablesCopied: 1, BytesCopied: 1024}, ResultOptions{Header: HeaderOptions{Width: narrowWidth, Config: cfg}}).View())
 }
 
