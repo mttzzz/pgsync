@@ -2,7 +2,6 @@ package screens
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,9 +89,11 @@ type ProgressEventRow struct {
 
 // ResultOptions configures the final report screen.
 type ResultOptions struct {
-	Header HeaderOptions
-	Tab    int
-	Tables []TableResultRow
+	Header        HeaderOptions
+	Tab           int
+	Tables        []TableResultRow
+	TablesOffset  int
+	TablesVisible int
 }
 
 // TableResultRow describes a table in the final report.
@@ -153,7 +154,7 @@ func DatabaseList(dbs []models.Database, err error, options ...DatabaseListOptio
 		opts = options[0]
 	}
 	body := renderDatabaseQueueBuilder(dbs, err, opts)
-	help := "↑/↓ move   Space select DB   A select all   C clear   R reload   Enter/Y continue   S settings"
+	help := "↑/↓ move   Space select DB   A select all   C clear   R reload   Enter continue   S settings"
 	return StaticScreen{ScreenID: DatabaseListID, Heading: "Database Queue Builder", Body: body, Hint: help}
 }
 
@@ -184,7 +185,7 @@ func renderDatabaseQueueBuilder(dbs []models.Database, err error, opts DatabaseL
 	}
 
 	content := panel("Databases", strings.Join(lines, "\n"), bodyWidth)
-	return page(viewport, header, content, footer(actionsLine([]actionLabel{{"Space", "select"}, {"A", "all"}, {"C", "clear"}, {"R", "reload"}, {"Enter/Y", "continue"}}, bodyWidth), bodyWidth))
+	return page(viewport, header, content, footer(actionsLine([]actionLabel{{"Space", "select"}, {"A", "all"}, {"C", "clear"}, {"R", "reload"}, {"Enter", "continue"}}, bodyWidth), bodyWidth))
 }
 
 func renderDatabaseTable(dbs []models.Database, opts DatabaseListOptions, width int, visible int) string {
@@ -440,7 +441,7 @@ func renderConfirmPlan(opts PlanReviewOptions) string {
 		"6 reset sequences",
 	}, "\n")
 	content := renderPlanContent(body, pipeline, bodyWidth)
-	return page(viewport, renderHeader(header), content, footer(actionsLine([]actionLabel{{"Enter/Y", "start"}, {"Esc", "back"}}, bodyWidth), bodyWidth))
+	return page(viewport, renderHeader(header), content, footer(actionsLine([]actionLabel{{"Enter", "start"}, {"Esc", "back"}}, bodyWidth), bodyWidth))
 }
 
 func renderPlanQueue(dbs []models.Database, width int) string {
@@ -534,11 +535,15 @@ func renderResult(result *models.SyncResult, opts ResultOptions) string {
 	var content string
 	switch normalizedTab(opts.Tab, 2) {
 	case 1:
-		content = panel("", renderTableResults(opts.Tables, bodyWidth), bodyWidth)
+		visible := opts.TablesVisible
+		if visible <= 0 {
+			visible = 5
+		}
+		content = panel("", renderTableResults(opts.Tables, bodyWidth, opts.TablesOffset, visible), bodyWidth)
 	default:
 		content = panel("", renderResultSummary(result), bodyWidth)
 	}
-	return page(viewport, renderHeader(opts.Header), tabs, content, footer(actionsLine([]actionLabel{{"Tab", "switch"}, {"Enter/Q", "quit"}, {"B", "back"}, {"R", "again"}}, bodyWidth), bodyWidth))
+	return page(viewport, renderHeader(opts.Header), tabs, content)
 }
 
 /* renderProgressOverview emits two stacked tiers:
@@ -565,7 +570,7 @@ func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 	queueBar := ui.ProgressBar(barWidth, queuePct) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.QueuePercent))
 	dbBar := ui.ProgressBar(barWidth, dbPct) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.DBPercent))
 
-	queueETA := estimateETA(snapshot.QueueBytesCopied, snapshot.QueueBytesEstimated, snapshot.BytesPerSec)
+	queueETA := estimateRowsETA(snapshot.QueueRowsCopied, snapshot.QueueRowsEstimated, elapsed)
 	queueStatus := []string{}
 	if snapshot.DBTotal > 1 {
 		queueStatus = append(queueStatus, ui.Metric("db", fmt.Sprintf("%s/%s", ui.FormatCount(snapshot.DBIndex), ui.FormatCount(snapshot.DBTotal)), styles.Warning))
@@ -578,7 +583,7 @@ func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 		ui.Metric("ETA", queueETA, styles.Warning),
 		ui.Metric("speed", ui.FormatBytesRate(snapshot.BytesPerSec), styles.Success),
 	)
-	queueBytes := ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.QueueBytesCopied), ui.FormatBytes(snapshot.QueueBytesEstimated)), styles.Accent)
+	queueBytes := ui.Metric("COPY", ui.FormatBytes(snapshot.QueueBytesCopied), styles.Accent)
 
 	dbName := emptyFallback(snapshot.CurrentDatabase, "—")
 	dbStatus := []string{styles.Primary.Render(dbName)}
@@ -586,21 +591,24 @@ func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 		dbStatus = append(dbStatus, ui.Metric("tables", fmt.Sprintf("%s/%s", ui.FormatCount(snapshot.DBTablesDone), ui.FormatCount(snapshot.DBTablesTotal)), styles.Success))
 	}
 	dbStatus = append(dbStatus,
-		ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.DBBytesCopied), ui.FormatBytes(snapshot.DBBytesEstimated)), styles.Accent),
+		ui.Metric("COPY", ui.FormatBytes(snapshot.DBBytesCopied), styles.Accent),
 		ui.Metric("rows", formatCounter(snapshot.DBRowsCopied, snapshot.DBRowsEstimated), styles.Accent),
 	)
 
 	separator := styles.Muted.Render(strings.Repeat("─", barWidth+8))
-	parts := []string{queueBar, dotJoin(queueStatus...), queueBytes, separator, dbBar, dotJoin(dbStatus...)}
-	if snapshot.CurrentTable != "" {
-		nowLine := renderNowLine(snapshot, bodyWidth)
-		parts = append(parts, nowLine)
-	}
+	nowLine := renderNowLine(snapshot, bodyWidth)
+	parts := []string{queueBar, dotJoin(queueStatus...), queueBytes, separator, dbBar, dotJoin(dbStatus...), nowLine}
 	return strings.Join(parts, "\n")
 }
 
+// renderNowLine always emits a fixed-shape line so the dashboard height
+// stays constant between tables — the bar never reflows when in-flight work
+// rolls over from one table to the next.
 func renderNowLine(snapshot ProgressSnapshot, bodyWidth int) string {
 	styles := ui.NewStyles()
+	if snapshot.CurrentTable == "" {
+		return styles.Muted.Render("now: ожидаем следующую таблицу…")
+	}
 	tableElapsed := time.Duration(0)
 	if !snapshot.CurrentStartedAt.IsZero() {
 		tableElapsed = snapshot.Now.Sub(snapshot.CurrentStartedAt)
@@ -611,12 +619,27 @@ func renderNowLine(snapshot ProgressSnapshot, bodyWidth int) string {
 	}
 	parts := []string{
 		styles.Accent.Render("now: " + truncate(snapshot.CurrentTable, maxInt(bodyWidth/2, 24))),
-		ui.Metric("COPY", fmt.Sprintf("%s / %s", ui.FormatBytes(snapshot.CurrentBytes), ui.FormatBytes(snapshot.CurrentBytesEstimate)), styles.Accent),
+		ui.Metric("COPY", ui.FormatBytes(snapshot.CurrentBytes), styles.Accent),
 		ui.Metric("rows", formatCounter(snapshot.CurrentRows, snapshot.CurrentRowsEstimate), styles.Accent),
 		ui.Metric("rows/s", ui.FormatRowsRate(rowsRate), styles.Success),
 		ui.Metric("elapsed", ui.FormatDurationTenths(tableElapsed), styles.Primary),
 	}
 	return dotJoin(parts...)
+}
+
+// estimateRowsETA projects remaining time using observed rows-per-second.
+// Rows are emitted only on table-done, so the ETA is a rolling estimate that
+// updates each time a table completes.
+func estimateRowsETA(rowsDone, rowsTotal int64, elapsed time.Duration) string {
+	if rowsTotal <= 0 || rowsDone <= 0 || elapsed <= 0 || rowsDone >= rowsTotal {
+		return "-"
+	}
+	rate := float64(rowsDone) / elapsed.Seconds()
+	if rate <= 0 {
+		return "-"
+	}
+	seconds := float64(rowsTotal-rowsDone) / rate
+	return ui.FormatDurationTenths(time.Duration(seconds * float64(time.Second)))
 }
 
 // formatCounter renders "copied/estimated" or just "copied" if estimated <= 0.
@@ -672,25 +695,80 @@ func renderResultSummary(result *models.SyncResult) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderTableResults(rows []TableResultRow, width int) string {
+// renderTableResults renders a virtually scrolled, fixed-height table list.
+// Rows are sorted by Bytes desc; only `visible` rows are shown starting at
+// `offset`. The shown block is padded with blank lines so the panel keeps
+// constant height regardless of scroll position; "▲ N above" / "▼ N below"
+// indicators show how many rows are out of view.
+func renderTableResults(rows []TableResultRow, width, offset, visible int) string {
 	styles := ui.NewStyles()
+	if visible <= 0 {
+		visible = 5
+	}
 	if len(rows) == 0 {
 		return styles.Muted.Render("Per-table report will appear after table metrics are collected.")
 	}
 	sorted := append([]TableResultRow(nil), rows...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Bytes > sorted[j].Bytes })
-	if width < 80 {
-		lines := []string{styles.Muted.Render(fmt.Sprintf("%-16s  %-22s  %10s  %s", "Database", "Table", "Rows", "COPY")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 24)))}
-		for _, row := range sorted {
-			lines = append(lines, fmt.Sprintf("%-16s  %-22s  %10s  %s", truncate(emptyFallback(row.Database, "—"), 16), truncate(row.Table, 22), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes)))
-		}
-		return strings.Join(lines, "\n")
+	total := len(sorted)
+	maxOffset := maxInt(total-visible, 0)
+	if offset < 0 {
+		offset = 0
 	}
-	lines := []string{styles.Muted.Render(fmt.Sprintf("%-20s  %-32s  %14s  %12s  %10s  %s", "Database", "Table", "Rows", "COPY stream", "Duration", "Avg speed")), styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 40)))}
-	for _, row := range sorted {
-		lines = append(lines, fmt.Sprintf("%-20s  %-32s  %14s  %12s  %10s  %s", truncate(emptyFallback(row.Database, "—"), 20), truncate(row.Table, 32), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes), ui.FormatDurationTenths(row.Duration), ui.FormatBytesRate(row.Speed)))
+	if offset > maxOffset {
+		offset = maxOffset
 	}
+	end := minInt(offset+visible, total)
+	above := offset
+	below := total - end
+
+	narrow := width < 80
+	header, separator, format := tableResultsLayout(width, narrow)
+	lines := []string{header, separator}
+	for index := offset; index < end; index++ {
+		row := sorted[index]
+		lines = append(lines, formatTableResultRow(format, row, narrow))
+	}
+	for pad := end - offset; pad < visible; pad++ {
+		lines = append(lines, " ")
+	}
+	lines = append(lines, scrollIndicator(above, below, total, styles))
 	return strings.Join(lines, "\n")
+}
+
+func tableResultsLayout(width int, narrow bool) (header, separator, format string) {
+	styles := ui.NewStyles()
+	if narrow {
+		format = "%-16s  %-22s  %10s  %s"
+		header = styles.Muted.Render(fmt.Sprintf(format, "Database", "Table", "Rows", "COPY"))
+		separator = styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 24)))
+		return
+	}
+	format = "%-20s  %-32s  %14s  %12s  %10s  %s"
+	header = styles.Muted.Render(fmt.Sprintf(format, "Database", "Table", "Rows", "COPY stream", "Duration", "Avg speed"))
+	separator = styles.Muted.Render(strings.Repeat("─", maxInt(width-10, 40)))
+	return
+}
+
+func formatTableResultRow(format string, row TableResultRow, narrow bool) string {
+	if narrow {
+		return fmt.Sprintf(format, truncate(emptyFallback(row.Database, "—"), 16), truncate(row.Table, 22), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes))
+	}
+	return fmt.Sprintf(format, truncate(emptyFallback(row.Database, "—"), 20), truncate(row.Table, 32), ui.FormatInt(row.Rows), ui.FormatBytes(row.Bytes), ui.FormatDurationTenths(row.Duration), ui.FormatBytesRate(row.Speed))
+}
+
+func scrollIndicator(above, below, total int, styles ui.Styles) string {
+	parts := []string{}
+	if above > 0 {
+		parts = append(parts, fmt.Sprintf("▲ %s above", ui.FormatCount(above)))
+	}
+	if below > 0 {
+		parts = append(parts, fmt.Sprintf("▼ %s below", ui.FormatCount(below)))
+	}
+	if len(parts) == 0 {
+		parts = append(parts, fmt.Sprintf("%s tables", ui.FormatCount(total)))
+	}
+	return styles.Muted.Render(strings.Join(parts, "   "))
 }
 
 func renderHeader(opts HeaderOptions) string {
@@ -1049,17 +1127,6 @@ func truncate(value string, width int) string {
 		runes = runes[:len(runes)-1]
 	}
 	return string(runes) + "…"
-}
-
-func estimateETA(done, total int64, speed float64) string {
-	if total <= 0 || done <= 0 || speed <= 0 || done >= total {
-		return "-"
-	}
-	seconds := float64(total-done) / speed
-	if math.IsNaN(seconds) || math.IsInf(seconds, 0) {
-		return "-"
-	}
-	return ui.FormatDurationTenths(time.Duration(seconds * float64(time.Second)))
 }
 
 func emptyFallback(value, fallback string) string {

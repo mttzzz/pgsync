@@ -39,7 +39,7 @@ func TestLiveProgressApplyAggregatesAcrossTableLifecycle(t *testing.T) {
 	assert.Equal(t, int64(40), progress.QueueBytesCopied())
 	assert.Equal(t, int64(40), progress.DBBytesCopied())
 	assert.Equal(t, 40.0, progress.CurrentPercent)
-	assert.InDelta(t, 40.0, progress.QueuePercent(), 0.5)
+	assert.Equal(t, 0.0, progress.QueuePercent(), "row-based queue % is 0 until table done")
 	assert.Equal(t, float64(20), progress.CurrentBytesPerSec)
 
 	progress.Apply(engine.Event{Name: engine.EventTableCopyDone, Database: "app", Table: "public.users", Rows: 10, Bytes: 120, Duration: 3 * time.Second}, now.Add(4*time.Second))

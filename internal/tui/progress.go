@@ -231,14 +231,16 @@ func (p LiveProgress) DBBytesCopied() int64 { return p.dbCompletedBytes + p.Curr
 // DBRowsCopied returns committed rows for the current DB.
 func (p LiveProgress) DBRowsCopied() int64 { return p.dbCompletedRows }
 
-// QueuePercent returns 0..100 byte progress across the queue.
+// QueuePercent returns 0..100 row progress across the queue. Rows are the only
+// reliable signal — COPY-stream bytes and catalog-estimated bytes routinely
+// diverge (TOAST/indexes/encoding), so row-based progress is the source of truth.
 func (p LiveProgress) QueuePercent() float64 {
-	return safePercent(p.QueueBytesCopied(), p.QueueBytesEstimated)
+	return safePercent(p.QueueRowsCopied(), p.QueueRowsEstimated)
 }
 
-// DBPercent returns 0..100 byte progress for the current DB.
+// DBPercent returns 0..100 row progress for the current DB.
 func (p LiveProgress) DBPercent() float64 {
-	return safePercent(p.DBBytesCopied(), p.DBBytesEstimated)
+	return safePercent(p.DBRowsCopied(), p.DBRowsEstimated)
 }
 
 // Snapshot converts aggregated state to the screen renderer DTO.

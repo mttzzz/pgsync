@@ -72,7 +72,7 @@ func (a App) onConfirmMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	if zone.Get(screens.ActionZone(screens.ActionStart)).InBounds(msg) || zone.Get(screens.ActionZone(screens.ActionConfirm)).InBounds(msg) {
-		return a.onConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+		return a.onConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
 	}
 	return a, nil
 }

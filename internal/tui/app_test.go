@@ -146,7 +146,7 @@ func TestDatabaseListEnterGoesToConfirmPlanWithMultipleSelection(t *testing.T) {
 	assert.True(t, app.State().SelectedDatabases["alpha"])
 	assert.True(t, app.State().SelectedDatabases["beta"])
 
-	model, _ = app.Update(key("y"))
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = model.(App)
 	assert.Equal(t, screens.ConfirmPlanID, app.State().Current)
 	view := app.View()

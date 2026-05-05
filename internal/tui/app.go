@@ -34,9 +34,12 @@ type State struct {
 	ProgressEvents    <-chan tea.Msg
 	SyncDone          <-chan SyncFinishedMsg
 	ActiveTab         int
+	TablesOffset      int
 	Width             int
 	Height            int
 }
+
+const resultTablesVisible = 5
 
 // App is a pure Bubble Tea model shell.
 type App struct {
@@ -153,7 +156,7 @@ func (a App) screenBody() string {
 		snapshot.Tab = a.state.ActiveTab
 		return screens.ProgressDashboard(snapshot).View()
 	case screens.ResultID:
-		return screens.Result(a.aggregateResult(), screens.ResultOptions{Header: screens.HeaderOptions{Config: a.state.Config, Database: a.headerDatabase(), Width: a.state.Width, Height: a.state.Height}, Tab: a.state.ActiveTab, Tables: a.state.Progress.TableResults}).View()
+		return screens.Result(a.aggregateResult(), screens.ResultOptions{Header: screens.HeaderOptions{Config: a.state.Config, Database: a.headerDatabase(), Width: a.state.Width, Height: a.state.Height}, Tab: a.state.ActiveTab, Tables: a.state.Progress.TableResults, TablesOffset: a.state.TablesOffset, TablesVisible: resultTablesVisible}).View()
 	default:
 		return fmt.Sprintf("Экран: %s", a.state.Current)
 	}
@@ -283,7 +286,7 @@ func (a App) onDatabaseListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		a.state.Quit = true
 		return a, tea.Quit
-	case "y", "enter", "right", "l":
+	case "enter", "right", "l":
 		if db, ok := a.currentDatabase(); ok && len(a.state.SelectedDatabases) == 0 {
 			if a.state.SelectedDatabases == nil {
 				a.state.SelectedDatabases = map[string]bool{}
@@ -303,7 +306,7 @@ func (a App) onConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.state.Current = screens.DatabaseListID
 	case "s":
 		return a.openSettings()
-	case "enter", "y":
+	case "enter":
 		queue := a.selectedDatabaseList()
 		if len(queue) == 0 {
 			a.state.Current = screens.DatabaseListID
@@ -338,12 +341,37 @@ func (a App) onProgressKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+//nolint:gocognit,gocyclo // Tab switch + scroll handling are explicit per key for clarity.
 func (a App) onResultKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	tableLen := len(a.state.Progress.TableResults)
 	switch msg.String() {
-	case "tab", "right", "l":
+	case "tab", "shift+tab", "right", "left":
 		a.state.ActiveTab = (a.state.ActiveTab + 1) % 2
-	case "shift+tab", "left", "h":
-		a.state.ActiveTab = (a.state.ActiveTab + 1) % 2
+		a.state.TablesOffset = 0
+	case "up", "k":
+		if a.state.ActiveTab == 1 {
+			a.state.TablesOffset = clampScrollOffset(a.state.TablesOffset-1, tableLen)
+		}
+	case "down", "j":
+		if a.state.ActiveTab == 1 {
+			a.state.TablesOffset = clampScrollOffset(a.state.TablesOffset+1, tableLen)
+		}
+	case "pgup":
+		if a.state.ActiveTab == 1 {
+			a.state.TablesOffset = clampScrollOffset(a.state.TablesOffset-resultTablesVisible, tableLen)
+		}
+	case "pgdown":
+		if a.state.ActiveTab == 1 {
+			a.state.TablesOffset = clampScrollOffset(a.state.TablesOffset+resultTablesVisible, tableLen)
+		}
+	case "home":
+		if a.state.ActiveTab == 1 {
+			a.state.TablesOffset = 0
+		}
+	case "end":
+		if a.state.ActiveTab == 1 {
+			a.state.TablesOffset = clampScrollOffset(tableLen, tableLen)
+		}
 	case "enter", "q", "esc", "ctrl+c":
 		a.state.Quit = true
 		return a, tea.Quit
@@ -351,6 +379,20 @@ func (a App) onResultKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.state.Current = screens.DatabaseListID
 	}
 	return a, nil
+}
+
+func clampScrollOffset(offset, total int) int {
+	maxOffset := total - resultTablesVisible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if offset < 0 {
+		return 0
+	}
+	if offset > maxOffset {
+		return maxOffset
+	}
+	return offset
 }
 
 //nolint:gocyclo // Menu shortcuts are kept in one small dispatcher for readability.
