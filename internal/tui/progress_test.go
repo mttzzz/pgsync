@@ -137,36 +137,48 @@ func TestLiveProgressForQueueRegistersDBPlans(t *testing.T) {
 	assert.Equal(t, int64(3072), progress.QueueBytesEstimated)
 	assert.Equal(t, int64(0), progress.QueueRowsEstimated, "rows unknown until DB plans land")
 
+	// Pre-plan all DBs (mirrors startSyncCmd flow): plans for ALL DBs land
+	// BEFORE any execution event. DBIndex must stay 0 until the engine
+	// actually starts executing — otherwise the dashboard would show
+	// "db N/N" before the first DB even begins.
 	progress.RegisterDB("alpha", []models.Table{
 		{Schema: "public", Name: "users", Rows: 100, SizeBytes: 500},
 		{Schema: "public", Name: "orders", Rows: 200, SizeBytes: 600},
 	}, 300, 1100)
+	progress.RegisterDB("beta", []models.Table{{Schema: "public", Name: "events", Rows: 50, SizeBytes: 800}}, 50, 800)
+	assert.Equal(t, 0, progress.DBIndex, "DBIndex stays 0 until first execution event")
+	assert.Equal(t, "", progress.CurrentDatabase, "no DB is current yet")
+	assert.Equal(t, int64(350), progress.QueueRowsEstimated, "queue rows accumulate from all plans")
+
+	// First DB starts executing — DBIndex bumps to 1, plan activates.
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "alpha"}, now.Add(time.Second))
 	assert.Equal(t, 1, progress.DBIndex)
 	assert.Equal(t, "alpha", progress.CurrentDatabase)
 	assert.Equal(t, int64(1100), progress.DBBytesEstimated)
 	assert.Equal(t, int64(300), progress.DBRowsEstimated)
 	assert.Equal(t, 2, progress.DBTablesTotal)
-	assert.Equal(t, int64(300), progress.QueueRowsEstimated)
-	assert.Contains(t, progress.planTables, "public.users")
 
-	progress.Apply(engine.Event{Name: engine.EventTableCopyStart, Database: "alpha", Table: "public.users"}, now.Add(time.Second))
+	progress.Apply(engine.Event{Name: engine.EventTableCopyStart, Database: "alpha", Table: "public.users"}, now.Add(2*time.Second))
 	assert.Equal(t, int64(100), progress.CurrentRowsEstimate, "row estimate comes from registered plan")
 	assert.Equal(t, int64(500), progress.CurrentBytesEstimate)
 
-	progress.Apply(engine.Event{Name: engine.EventTableCopyDone, Database: "alpha", Table: "public.users", Rows: 100, Bytes: 500, Duration: time.Second}, now.Add(2*time.Second))
+	progress.Apply(engine.Event{Name: engine.EventTableCopyDone, Database: "alpha", Table: "public.users", Rows: 100, Bytes: 500, Duration: time.Second}, now.Add(3*time.Second))
 	assert.Equal(t, 1, progress.DBTablesDone)
 	assert.Equal(t, 1, progress.QueueTablesDone)
 	assert.Equal(t, int64(500), progress.DBBytesCopied())
 	assert.Equal(t, int64(500), progress.QueueBytesCopied())
 
-	progress.RegisterDB("beta", []models.Table{{Schema: "public", Name: "events", Rows: 50, SizeBytes: 800}}, 50, 800)
+	// Second DB starts executing — DBIndex now 2, beta's plan activates.
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "beta"}, now.Add(4*time.Second))
 	assert.Equal(t, 2, progress.DBIndex)
-	assert.Equal(t, int64(0), progress.DBBytesCopied(), "DB counters reset on new registration")
+	assert.Equal(t, "beta", progress.CurrentDatabase)
+	assert.Equal(t, int64(800), progress.DBBytesEstimated, "DB totals swap to beta's plan")
+	assert.Equal(t, int64(0), progress.DBBytesCopied(), "DB counters reset on switch")
 	assert.Equal(t, int64(500), progress.QueueBytesCopied(), "queue counters survive across DBs")
-	assert.Equal(t, int64(350), progress.QueueRowsEstimated)
 
-	progress.RegisterDB("alpha", nil, 0, 0)
-	assert.Equal(t, 2, progress.DBIndex, "revisiting alpha must not bump DBIndex")
+	// Re-entering alpha (pathological, e.g. retry) must not bump DBIndex past total.
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "alpha"}, now.Add(5*time.Second))
+	assert.Equal(t, 2, progress.DBIndex, "revisiting alpha keeps DBIndex at 2")
 }
 
 func TestLiveProgressForQueueGrowsDBTotalWhenEventsExceedQueue(t *testing.T) {
@@ -179,22 +191,31 @@ func TestLiveProgressForQueueGrowsDBTotalWhenEventsExceedQueue(t *testing.T) {
 	assert.Equal(t, 2, progress.DBTotal, "DBTotal grows when more DBs arrive than expected")
 }
 
-func TestRegisterDBGrowsDBTotalBeyondInitialQueue(t *testing.T) {
+func TestApplyGrowsDBTotalBeyondInitialQueue(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
 	progress := NewLiveProgressForQueue([]models.Database{{Name: "alpha"}}, now)
-	progress.RegisterDB("alpha", nil, 0, 0)
-	progress.RegisterDB("beta", nil, 0, 0)
-	assert.Equal(t, 2, progress.DBTotal)
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "alpha"}, now)
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "beta"}, now.Add(time.Second))
+	assert.Equal(t, 2, progress.DBTotal, "DBTotal grows when an unexpected DB shows up")
 }
 
-func TestRegisterDBLazilyInitializesSeenMap(t *testing.T) {
+func TestRegisterDBStashesPlanForLaterActivation(t *testing.T) {
 	t.Parallel()
 	var progress LiveProgress
 	progress.RegisterDB("alpha", []models.Table{{Schema: "public", Name: "users", Rows: 1, SizeBytes: 1}}, 1, 1)
-	assert.Equal(t, 1, progress.DBIndex)
-	assert.Equal(t, "alpha", progress.CurrentDatabase)
-	assert.Contains(t, progress.planTables, "public.users")
+	assert.Equal(t, 0, progress.DBIndex, "RegisterDB never bumps DBIndex")
+	assert.Equal(t, "", progress.CurrentDatabase, "RegisterDB never sets CurrentDatabase")
+	assert.Empty(t, progress.planTables, "planTables is loaded only on activation")
+	assert.Contains(t, progress.dbPlans, "alpha", "plan is stashed by DB name")
+}
+
+func TestApplyActivatesUnregisteredDBWithEmptyPlan(t *testing.T) {
+	t.Parallel()
+	var progress LiveProgress
+	progress.Apply(engine.Event{Name: engine.EventSyncStart, Database: "ghost"}, time.Now())
+	assert.Equal(t, "ghost", progress.CurrentDatabase)
+	assert.Equal(t, int64(0), progress.DBBytesEstimated, "no plan registered → totals stay zero")
 }
 
 func TestApplyClampsRowsEstimateWhenActualExceeds(t *testing.T) {

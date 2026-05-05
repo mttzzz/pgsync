@@ -546,11 +546,13 @@ func renderResult(result *models.SyncResult, opts ResultOptions) string {
 	return page(viewport, renderHeader(opts.Header), tabs, content)
 }
 
-/* renderProgressOverview emits two stacked tiers:
- *   queue tier: bar, db i/N · tables done/total · rows X/Y · err N · elapsed · ETA · speed · COPY x/y
- *   db tier:    bar, db_name · tables done/total · COPY x/y · rows X/Y
- *   now line:   schema.table · COPY x/y · rows/s · elapsed (only while a table is in flight)
- * "rows X/0" is suppressed when the estimate is unknown (queue not yet planned). */
+/* renderProgressOverview emits one queue-wide progress bar with summary lines:
+ *   bar      · queue % across all selected DBs
+ *   status   · db i/N · tables done/total · rows X/Y · err N · elapsed · ETA · speed
+ *   bytes    · COPY xxx (cumulative bytes copied, no /total — catalog estimate
+ *              is unreliable, see the rows-based progress decision)
+ *   now line · current DB / current table · COPY · rows X/Y · rows/s · elapsed
+ * Single bar covers the whole sync run — no per-DB duplicate tier. */
 func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 	styles := ui.NewStyles()
 	elapsed := time.Duration(0)
@@ -563,12 +565,7 @@ func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 	if queuePct == 0 {
 		queuePct = snapshot.QueuePercent
 	}
-	dbPct := snapshot.DBAnimatedPercent
-	if dbPct == 0 {
-		dbPct = snapshot.DBPercent
-	}
 	queueBar := ui.ProgressBar(barWidth, queuePct) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.QueuePercent))
-	dbBar := ui.ProgressBar(barWidth, dbPct) + "  " + styles.Accent.Render(ui.FormatPercent(snapshot.DBPercent))
 
 	queueETA := estimateRowsETA(snapshot.QueueRowsCopied, snapshot.QueueRowsEstimated, elapsed)
 	queueStatus := []string{}
@@ -585,25 +582,9 @@ func renderProgressOverview(snapshot ProgressSnapshot, bodyWidth int) string {
 	)
 	queueBytes := ui.Metric("COPY", ui.FormatBytes(snapshot.QueueBytesCopied), styles.Accent)
 
-	dbName := emptyFallback(snapshot.CurrentDatabase, "—")
-	dbStatus := []string{styles.Primary.Render(dbName)}
-	if snapshot.DBTablesTotal > 0 {
-		dbStatus = append(dbStatus, ui.Metric("tables", fmt.Sprintf("%s/%s", ui.FormatCount(snapshot.DBTablesDone), ui.FormatCount(snapshot.DBTablesTotal)), styles.Success))
-	}
-	dbStatus = append(dbStatus,
-		ui.Metric("COPY", ui.FormatBytes(snapshot.DBBytesCopied), styles.Accent),
-		ui.Metric("rows", formatCounter(snapshot.DBRowsCopied, snapshot.DBRowsEstimated), styles.Accent),
-	)
-
 	separator := styles.Muted.Render(strings.Repeat("─", barWidth+8))
 	nowLine := renderNowLine(snapshot, bodyWidth)
-	// Single-DB mode collapses the bottom tier — top bar already represents
-	// the only DB, so the duplicate would just be visual noise.
-	if snapshot.DBTotal <= 1 {
-		return strings.Join([]string{queueBar, dotJoin(queueStatus...), queueBytes, separator, nowLine}, "\n")
-	}
-	parts := []string{queueBar, dotJoin(queueStatus...), queueBytes, separator, dbBar, dotJoin(dbStatus...), nowLine}
-	return strings.Join(parts, "\n")
+	return strings.Join([]string{queueBar, dotJoin(queueStatus...), queueBytes, separator, nowLine}, "\n")
 }
 
 // renderNowLine always emits a fixed-shape line so the dashboard height
@@ -622,8 +603,12 @@ func renderNowLine(snapshot ProgressSnapshot, bodyWidth int) string {
 	if tableElapsed > 0 {
 		rowsRate = float64(snapshot.CurrentRows) / tableElapsed.Seconds()
 	}
+	target := snapshot.CurrentTable
+	if snapshot.CurrentDatabase != "" {
+		target = snapshot.CurrentDatabase + " / " + snapshot.CurrentTable
+	}
 	parts := []string{
-		styles.Accent.Render("now: " + truncate(snapshot.CurrentTable, maxInt(bodyWidth/2, 24))),
+		styles.Accent.Render("now: " + truncate(target, maxInt(bodyWidth/2, 24))),
 		ui.Metric("COPY", ui.FormatBytes(snapshot.CurrentBytes), styles.Accent),
 		ui.Metric("rows", formatCounter(snapshot.CurrentRows, snapshot.CurrentRowsEstimate), styles.Accent),
 		ui.Metric("rows/s", ui.FormatRowsRate(rowsRate), styles.Success),

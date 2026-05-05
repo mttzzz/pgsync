@@ -59,6 +59,16 @@ type LiveProgress struct {
 	TableResults []screens.TableResultRow
 	planTables   map[string]models.Table
 	seenDBs      map[string]bool
+	dbPlans      map[string]dbPlanSnapshot
+}
+
+// dbPlanSnapshot caches per-DB plan info from RegisterDB so we can apply it
+// when the DB actually starts executing (not when its plan is registered).
+type dbPlanSnapshot struct {
+	tables      []models.Table
+	rows        int64
+	bytes       int64
+	tablesTotal int
 }
 
 // NewLiveProgress initializes from a single sync plan (single-DB callers / tests).
@@ -94,38 +104,44 @@ func NewLiveProgressForQueue(queue []models.Database, now time.Time) LiveProgres
 	return progress
 }
 
-// RegisterDB attaches a fresh DB plan to live progress. Called when planner
-// returns a plan for the next queued DB, before executor.Execute starts.
+// RegisterDB stashes a planned DB's totals so they can be activated when the
+// engine actually starts that DB. Called before executor.Execute fires for
+// each pre-planned DB; it accumulates queue-level estimates only and never
+// touches DBIndex/CurrentDatabase — those advance via Apply on real events.
 func (p *LiveProgress) RegisterDB(database string, tables []models.Table, rows, bytes int64) {
-	p.CurrentDatabase = database
-	p.DBBytesEstimated = bytes
-	p.DBRowsEstimated = rows
-	p.DBTablesTotal = len(tables)
+	if p.dbPlans == nil {
+		p.dbPlans = map[string]dbPlanSnapshot{}
+	}
+	p.dbPlans[database] = dbPlanSnapshot{
+		tables:      tables,
+		rows:        rows,
+		bytes:       bytes,
+		tablesTotal: len(tables),
+	}
+	p.QueueRowsEstimated += rows
+}
+
+// activateDB swaps DB-tier counters to a previously registered plan. Called
+// from Apply when an engine event reveals a new CurrentDatabase.
+func (p *LiveProgress) activateDB(database string) {
 	p.DBTablesDone = 0
 	p.dbCompletedRows = 0
 	p.dbCompletedBytes = 0
-	p.CurrentTable = ""
-	p.CurrentBytes = 0
-	p.CurrentRows = 0
-	p.CurrentBytesEstimate = 0
-	p.CurrentRowsEstimate = 0
-	p.CurrentPercent = 0
 	p.dbAnim = 0
-	p.QueueRowsEstimated += rows
-	p.planTables = map[string]models.Table{}
-	for _, table := range tables {
-		p.planTables[tableEventName(table)] = table
-	}
-	if p.seenDBs == nil {
-		p.seenDBs = map[string]bool{}
-	}
-	if !p.seenDBs[database] {
-		p.seenDBs[database] = true
-		p.DBIndex = len(p.seenDBs)
-		if p.DBTotal > 0 && p.DBIndex > p.DBTotal {
-			p.DBTotal = p.DBIndex
+	if info, ok := p.dbPlans[database]; ok {
+		p.DBBytesEstimated = info.bytes
+		p.DBRowsEstimated = info.rows
+		p.DBTablesTotal = info.tablesTotal
+		p.planTables = map[string]models.Table{}
+		for _, table := range info.tables {
+			p.planTables[tableEventName(table)] = table
 		}
+		return
 	}
+	p.DBBytesEstimated = 0
+	p.DBRowsEstimated = 0
+	p.DBTablesTotal = 0
+	p.planTables = map[string]models.Table{}
 }
 
 // Apply records a new engine event and updates derived counters.
@@ -146,8 +162,9 @@ func (p *LiveProgress) Apply(event engine.Event, now time.Time) {
 		p.CurrentBytesPerSec = event.BytesPerSec
 	}
 	if event.Database != "" && event.Database != p.CurrentDatabase {
-		// EventSyncStart for a new DB without prior RegisterDB (e.g. tests, or
-		// engine emitted before plan-ready landed). Track DB index, reset table.
+		// New DB just started executing — bump DBIndex (only here, never on
+		// RegisterDB), swap DB-tier totals from the cached plan snapshot,
+		// and clear table-level state so the next CopyStart fills it fresh.
 		if p.seenDBs == nil {
 			p.seenDBs = map[string]bool{}
 		}
@@ -159,6 +176,7 @@ func (p *LiveProgress) Apply(event engine.Event, now time.Time) {
 			}
 		}
 		p.CurrentDatabase = event.Database
+		p.activateDB(event.Database)
 		p.CurrentTable = ""
 		p.CurrentBytes = 0
 		p.CurrentRows = 0
