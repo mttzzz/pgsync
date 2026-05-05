@@ -24,4 +24,6 @@ github.com/mttzzz/pgsync/internal/tui/tick.go
 github.com/mttzzz/pgsync/internal/tui/screens/basic.go
 github.com/mttzzz/pgsync/internal/tui/screens/config_editor.go
 github.com/mttzzz/pgsync/internal/updater/updater.go
+github.com/mttzzz/pgsync/internal/updater/updater_windows.go
+github.com/mttzzz/pgsync/internal/updater/updater_other.go
 github.com/mttzzz/pgsync/test/helpers
