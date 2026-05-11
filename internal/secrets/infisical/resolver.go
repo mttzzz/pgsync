@@ -1,7 +1,6 @@
-/* Package infisical resolves a project's database name from its local
- * Infisical workspace, by locating the nearest .infisical.json and
- * shelling out to `infisical export --env=dev --format=dotenv --silent`.
- */
+// Package infisical resolves a project's database name from its local
+// Infisical workspace, by locating the nearest .infisical.json and
+// shelling out to `infisical export --env=dev --format=dotenv --silent`.
 package infisical
 
 import (
@@ -63,7 +62,7 @@ func (r Resolver) ResolveDBName(ctx context.Context) (string, error) {
 }
 
 func defaultRun(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- name and args are constants from ResolveDBName; only dir varies and is the resolved Infisical workspace root.
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

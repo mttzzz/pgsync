@@ -28,9 +28,9 @@ func TestSyncResolvesDBNameViaInfisicalE2E(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".infisical.json"), []byte(`{"workspaceId":"x"}`), 0o600))
 
 	binDir := filepath.Join(dir, "bin")
-	require.NoError(t, os.Mkdir(binDir, 0o755))
+	require.NoError(t, os.Mkdir(binDir, 0o750))
 	stub := filepath.Join(binDir, "infisical")
-	require.NoError(t, os.WriteFile(stub, []byte("#!/bin/sh\necho \"POSTGRES_URL='postgresql://u:p@h:5432/e2e_db?sslmode=require'\"\n"), 0o755))
+	require.NoError(t, os.WriteFile(stub, []byte("#!/bin/sh\necho \"POSTGRES_URL='postgresql://u:p@h:5432/e2e_db?sslmode=require'\"\n"), 0o700)) // #nosec G306 -- shell stub must be executable for exec.
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Chdir(dir)

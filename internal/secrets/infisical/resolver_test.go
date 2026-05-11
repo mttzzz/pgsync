@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestResolveDBNameFindsInfisicalJSONInParent(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".infisical.json"), []byte(`{"workspaceId":"x"}`), 0o600))
 	sub := filepath.Join(dir, "nested", "deep")
-	require.NoError(t, os.MkdirAll(sub, 0o755))
+	require.NoError(t, os.MkdirAll(sub, 0o750))
 
 	r := infisical.Resolver{
 		CWD:      sub,
@@ -216,6 +217,9 @@ func TestResolveDBNameWithEmptyCWD(t *testing.T) {
  * and leaving both LookPath and Run nil.
  */
 func TestResolveDBNameWithNilHooksUsesRealExec(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell stub; Windows has no /bin/sh and no `infisical` in CI PATH")
+	}
 	/* Not parallel: modifies PATH env var via t.Setenv. */
 	binDir := t.TempDir()
 	projDir := t.TempDir()
@@ -224,7 +228,7 @@ func TestResolveDBNameWithNilHooksUsesRealExec(t *testing.T) {
 	/* Write a POSIX shell script that acts as infisical export. */
 	script := "#!/bin/sh\nprintf 'DB_DATABASE=nil_hooks_db\\n'\n"
 	scriptPath := filepath.Join(binDir, "infisical")
-	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o700)) // #nosec G306 -- script must be executable to be run by exec.
 
 	/* Prepend fake bin dir so exec.LookPath finds our stub. */
 	origPath := os.Getenv("PATH")

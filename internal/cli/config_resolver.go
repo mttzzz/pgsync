@@ -75,28 +75,40 @@ func (r Resolver) Resolve(ctx context.Context, flags FlagOverrides) (config.Conf
 		return config.Config{}, fmt.Errorf("load config: %w", loadErr)
 	}
 
-	if strings.TrimSpace(cfg.Remote.Database) == "" || strings.TrimSpace(cfg.Local.Database) == "" {
-		resolver := r.Infisical
-		if resolver == nil {
-			resolver = infisical.Resolver{}
-		}
-		name, resolveErr := resolver.ResolveDBName(ctx)
-		if resolveErr != nil {
-			return config.Config{}, resolveErr
-		}
-		if strings.TrimSpace(cfg.Remote.Database) == "" {
-			cfg.Remote.Database = name
-		}
-		if strings.TrimSpace(cfg.Local.Database) == "" {
-			cfg.Local.Database = name
-		}
-		if strings.TrimSpace(cfg.Runtime.DefaultDatabase) == "" {
-			cfg.Runtime.DefaultDatabase = name
-		}
+	cfg, err = r.fillDatabaseFromInfisical(ctx, cfg)
+	if err != nil {
+		return config.Config{}, err
 	}
 
 	if err := config.Validate(cfg); err != nil {
 		return config.Config{}, err
+	}
+	return cfg, nil
+}
+
+/* fillDatabaseFromInfisical invokes the Infisical resolver when either
+ * Remote.Database or Local.Database is still unset, and populates all
+ * three database fields that remained empty. */
+func (r Resolver) fillDatabaseFromInfisical(ctx context.Context, cfg config.Config) (config.Config, error) {
+	if strings.TrimSpace(cfg.Remote.Database) != "" && strings.TrimSpace(cfg.Local.Database) != "" {
+		return cfg, nil
+	}
+	resolver := r.Infisical
+	if resolver == nil {
+		resolver = infisical.Resolver{}
+	}
+	name, err := resolver.ResolveDBName(ctx)
+	if err != nil {
+		return config.Config{}, err
+	}
+	if strings.TrimSpace(cfg.Remote.Database) == "" {
+		cfg.Remote.Database = name
+	}
+	if strings.TrimSpace(cfg.Local.Database) == "" {
+		cfg.Local.Database = name
+	}
+	if strings.TrimSpace(cfg.Runtime.DefaultDatabase) == "" {
+		cfg.Runtime.DefaultDatabase = name
 	}
 	return cfg, nil
 }

@@ -37,14 +37,7 @@ func newSyncCommand(app App, globals *globalFlags) *cobra.Command {
 
 func runSync(ctx context.Context, app App, overrides FlagOverrides, syncFlags SyncFlags, db string) error {
 	db = strings.TrimSpace(db)
-	if db != "" {
-		if overrides.Remote.Database == "" {
-			overrides.Remote.Database = db
-		}
-		if overrides.Local.Database == "" {
-			overrides.Local.Database = db
-		}
-	}
+	overrides = applyPositionalDatabase(overrides, db)
 	cfg, err := app.ResolveFn(ctx, overrides)
 	if err != nil {
 		return err
@@ -86,6 +79,23 @@ func syncLogger(cfg config.Config, overrides FlagOverrides, out io.Writer) *slog
 	}
 	logger, _ := observability.NewLogger(observability.Options{Level: level, Format: cfg.Logging.Format, Out: out})
 	return logger
+}
+
+/* applyPositionalDatabase pre-populates Remote/Local database fields from
+ * the positional `pgsync sync <db>` arg so the Infisical resolver is bypassed
+ * when the user supplied the name explicitly. Existing values (from TOML,
+ * flags, or PGSYNC_*_DATABASE env) are preserved. */
+func applyPositionalDatabase(overrides FlagOverrides, db string) FlagOverrides {
+	if db == "" {
+		return overrides
+	}
+	if overrides.Remote.Database == "" {
+		overrides.Remote.Database = db
+	}
+	if overrides.Local.Database == "" {
+		overrides.Local.Database = db
+	}
+	return overrides
 }
 
 func newSyncObserver(out io.Writer, overrides FlagOverrides) engine.ProgressObserver {
