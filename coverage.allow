@@ -27,3 +27,6 @@ github.com/mttzzz/pgsync/internal/updater/updater.go
 github.com/mttzzz/pgsync/internal/updater/updater_windows.go
 github.com/mttzzz/pgsync/internal/updater/updater_other.go
 github.com/mttzzz/pgsync/test/helpers
+# Infisical resolver: os.Getwd/filepath.Abs error branches in findInfisicalRoot
+# are OS-failure paths (deleted cwd) not practically testable without hacks.
+findInfisicalRoot
