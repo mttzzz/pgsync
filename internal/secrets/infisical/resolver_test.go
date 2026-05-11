@@ -1,0 +1,43 @@
+package infisical_test
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/mttzzz/pgsync/internal/secrets/infisical"
+)
+
+func requireT(t *testing.T) *require.Assertions {
+	t.Helper()
+	return require.New(t)
+}
+
+func TestResolveDBNameFailsWhenNoInfisicalJSON(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	r := infisical.Resolver{CWD: dir}
+	_, err := r.ResolveDBName(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no .infisical.json found")
+	assert.Contains(t, err.Error(), dir)
+}
+
+func TestResolveDBNameFindsInfisicalJSONInParent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	req := requireT(t)
+	req.NoError(os.WriteFile(filepath.Join(dir, ".infisical.json"), []byte(`{"workspaceId":"x"}`), 0o600))
+	sub := filepath.Join(dir, "nested", "deep")
+	req.NoError(os.MkdirAll(sub, 0o755))
+
+	r := infisical.Resolver{CWD: sub}
+	_, err := r.ResolveDBName(context.Background())
+	req.Error(err)
+	/* walk-up succeeded; we land in "not implemented" until later tasks. */
+	assert.Contains(t, err.Error(), "not implemented")
+}
