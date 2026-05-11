@@ -192,7 +192,7 @@ func TestSyncReturnsPlanOptionsError(t *testing.T) {
 	cfg := testConfig()
 	cfg.Runtime.DefaultDatabase = ""
 	cfg.Remote.Database = ""
-	err := runSync(context.Background(), appWithEngine(fake), FlagOverrides{ConfigPath: writeTestConfig(t, cfg)}, SyncFlags{}, " ")
+	err := runSync(context.Background(), normalizeApp(appWithEngine(fake)), FlagOverrides{ConfigPath: writeTestConfig(t, cfg)}, SyncFlags{}, " ")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database is required")
 	assert.Zero(t, fake.planCalls)

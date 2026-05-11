@@ -45,11 +45,7 @@ func runSync(ctx context.Context, app App, overrides FlagOverrides, syncFlags Sy
 			overrides.Local.Database = db
 		}
 	}
-	resolveFn := app.ResolveFn
-	if resolveFn == nil {
-		resolveFn = Resolve
-	}
-	cfg, err := resolveFn(ctx, overrides)
+	cfg, err := app.ResolveFn(ctx, overrides)
 	if err != nil {
 		return err
 	}
