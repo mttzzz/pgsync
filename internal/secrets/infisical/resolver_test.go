@@ -12,11 +12,6 @@ import (
 	"github.com/mttzzz/pgsync/internal/secrets/infisical"
 )
 
-func requireT(t *testing.T) *require.Assertions {
-	t.Helper()
-	return require.New(t)
-}
-
 func TestResolveDBNameFailsWhenNoInfisicalJSON(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -30,14 +25,13 @@ func TestResolveDBNameFailsWhenNoInfisicalJSON(t *testing.T) {
 func TestResolveDBNameFindsInfisicalJSONInParent(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	req := requireT(t)
-	req.NoError(os.WriteFile(filepath.Join(dir, ".infisical.json"), []byte(`{"workspaceId":"x"}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".infisical.json"), []byte(`{"workspaceId":"x"}`), 0o600))
 	sub := filepath.Join(dir, "nested", "deep")
-	req.NoError(os.MkdirAll(sub, 0o755))
+	require.NoError(t, os.MkdirAll(sub, 0o755))
 
 	r := infisical.Resolver{CWD: sub}
 	_, err := r.ResolveDBName(context.Background())
-	req.Error(err)
+	require.Error(t, err)
 	/* walk-up succeeded; we land in "not implemented" until later tasks. */
 	assert.Contains(t, err.Error(), "not implemented")
 }
