@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 )
@@ -38,36 +37,7 @@ func ApplyEnv(cfg Config, env map[string]string) (Config, error) {
 		}
 	}
 
-	var err error
-	cfg, err = applyConventionalEnv(cfg, env)
-	if err != nil {
-		return Config{}, err
-	}
-
-	var bindErr error
-	cfg, bindErr = applyPGSyncBindings(cfg, env, mustInt, mustBool, mustStr)
-	if bindErr != nil {
-		return Config{}, bindErr
-	}
-	return cfg, nil
-}
-
-/* applyConventionalEnv applies generic conventions: DB_DATABASE (Laravel/Symfony)
- * fills only the database name; POSTGRES_URL fills the entire local connection.
- * Applied in this order so a full URL overrides DB_DATABASE when both are set. */
-func applyConventionalEnv(cfg Config, env map[string]string) (Config, error) {
-	if dbName := strings.TrimSpace(env["DB_DATABASE"]); dbName != "" {
-		cfg.Local.Database = dbName
-		cfg.Runtime.DefaultDatabase = dbName
-	}
-	if rawURL := strings.TrimSpace(env["POSTGRES_URL"]); rawURL != "" {
-		var err error
-		cfg, err = applyPostgresURL(cfg, rawURL)
-		if err != nil {
-			return Config{}, fmt.Errorf("env POSTGRES_URL: %w", err)
-		}
-	}
-	return cfg, nil
+	return applyPGSyncBindings(cfg, env, mustInt, mustBool, mustStr)
 }
 
 func applyPGSyncBindings(
@@ -113,42 +83,4 @@ func applyPGSyncBindings(
 		}
 	}
 	return cfg, nil
-}
-
-//nolint:gocyclo // URL parsing maps optional connection components into config explicitly.
-func applyPostgresURL(cfg Config, rawURL string) (Config, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return Config{}, fmt.Errorf("parse postgres url: %w", err)
-	}
-	if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
-		return Config{}, fmt.Errorf("postgres url scheme must be postgres or postgresql, got %q", parsed.Scheme)
-	}
-	if strings.TrimSpace(parsed.Hostname()) == "" {
-		return Config{}, fmt.Errorf("postgres url host is required")
-	}
-
-	cfg.Local.Host = parsed.Hostname()
-	cfg.Local.Port = 5432
-	if port := parsed.Port(); port != "" {
-		cfg.Local.Port, _ = strconv.Atoi(port)
-	}
-	if parsed.User != nil {
-		cfg.Local.User = parsed.User.Username()
-		if password, ok := parsed.User.Password(); ok {
-			cfg.Local.Password = password
-		}
-	}
-	if database := postgresURLDatabase(parsed); database != "" {
-		cfg.Local.Database = database
-		cfg.Runtime.DefaultDatabase = database
-	}
-	if sslMode := strings.TrimSpace(parsed.Query().Get("sslmode")); sslMode != "" {
-		cfg.Local.SSLMode = sslMode
-	}
-	return cfg, nil
-}
-
-func postgresURLDatabase(parsed *url.URL) string {
-	return strings.TrimPrefix(parsed.Path, "/")
 }
