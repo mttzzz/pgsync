@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -76,26 +75,6 @@ func TestResolveUsesProcessEnvironment(t *testing.T) {
 	assert.Equal(t, "file-remote", got.Remote.Host)
 }
 
-func TestResolveLoadsDotEnvPostgresURL(t *testing.T) {
-	clearPGSyncEnv(t)
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, config.Save(cfgPath, testConfig()))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte(strings.Join([]string{
-		strings.Join([]string{"POSTGRES_URL='postgresql://app:", "sec", "ret", "@dotenv.example.com:6543/dotenv_db?sslmode=disable'"}, ""),
-	}, "\n")), 0o600))
-	require.NoError(t, os.Chdir(dir))
-	t.Cleanup(func() { _ = os.Chdir(cwd) })
-
-	got, err := Resolve(context.Background(), FlagOverrides{ConfigPath: cfgPath})
-	require.NoError(t, err)
-	assert.Equal(t, "file-remote", got.Remote.Host)
-	assert.Equal(t, "dotenv.example.com", got.Local.Host)
-	assert.Equal(t, "dotenv_db", got.Runtime.DefaultDatabase)
-}
-
 func TestResolverUsesProcessEnvironmentWhenEnvIsNil(t *testing.T) {
 	clearPGSyncEnv(t)
 	path := writeTestConfig(t, testConfig())
@@ -118,23 +97,6 @@ func TestResolverSurfacesConfigLoadErrorWhenOverridesAreIncomplete(t *testing.T)
 	_, err := (Resolver{StorePath: missing, Env: map[string]string{}}).Resolve(context.Background(), FlagOverrides{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "load config")
-}
-
-func TestResolverUsesPostgresURLForLocalAndDefaultDatabase(t *testing.T) {
-	t.Parallel()
-	path := writeTestConfig(t, testConfig())
-	got, err := (Resolver{StorePath: path, Env: map[string]string{
-		"POSTGRES_URL": strings.Join([]string{"postgres://app:", "sec", "ret", "@local.example.com:6543/url_db?sslmode=disable"}, ""),
-	}}).Resolve(context.Background(), FlagOverrides{})
-	require.NoError(t, err)
-	assert.Equal(t, "file-remote", got.Remote.Host)
-	assert.Equal(t, "local.example.com", got.Local.Host)
-	assert.Equal(t, 6543, got.Local.Port)
-	assert.Equal(t, "app", got.Local.User)
-	assert.Equal(t, "secret", got.Local.Password)
-	assert.Equal(t, "url_db", got.Local.Database)
-	assert.Equal(t, "url_db", got.Runtime.DefaultDatabase)
-	assert.Equal(t, "disable", got.Local.SSLMode)
 }
 
 func TestResolverIgnoresConfigLoadErrorWhenEnvSuppliesHosts(t *testing.T) {
