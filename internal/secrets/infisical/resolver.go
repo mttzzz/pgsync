@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -27,8 +28,14 @@ func (r Resolver) ResolveDBName(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	lookPath := r.LookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	if _, err := lookPath("infisical"); err != nil {
+		return "", fmt.Errorf("pgsync: 'infisical' CLI not found in PATH (install: https://infisical.com/docs/cli/overview)")
+	}
 	_ = root
-	_ = ctx
 	return "", fmt.Errorf("not implemented")
 }
 

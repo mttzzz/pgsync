@@ -35,3 +35,17 @@ func TestResolveDBNameFindsInfisicalJSONInParent(t *testing.T) {
 	/* walk-up succeeded; we land in "not implemented" until later tasks. */
 	assert.Contains(t, err.Error(), "not implemented")
 }
+
+func TestResolveDBNameFailsWhenInfisicalBinaryMissing(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".infisical.json"), []byte(`{}`), 0o600))
+
+	r := infisical.Resolver{
+		CWD:      dir,
+		LookPath: func(string) (string, error) { return "", os.ErrNotExist },
+	}
+	_, err := r.ResolveDBName(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "'infisical' CLI not found in PATH")
+}
