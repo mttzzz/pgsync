@@ -37,10 +37,14 @@ pgsync doctor --output=json
 pgsync upgrade --check-only
 ```
 
-When `POSTGRES_URL` is set in the environment or `.env`, the local connection
-(host, port, user, password, database) is derived from it. As a convenience for
-Laravel/Symfony projects, a standalone `DB_DATABASE` env var sets only the
-local target database name.
+When the database name is not provided via `[remote] database` / `[local] database`
+in the config, `--remote-database` / `--local-database` flags, `PGSYNC_REMOTE_DATABASE` /
+`PGSYNC_LOCAL_DATABASE` env vars, or a positional `pgsync sync <db>` argument, pgsync
+resolves it from [Infisical](https://infisical.com): it walks up from the current
+working directory to find `.infisical.json`, runs `infisical export --env=dev
+--format=dotenv --silent`, and extracts the DB name from `POSTGRES_URL` (path
+component) or `DB_DATABASE`. Requires `infisical` on `$PATH` and an active
+`infisical login`. Fails fast with an actionable message if either is missing.
 
 ## Build / dev
 
