@@ -9,12 +9,20 @@ import (
 
 	"github.com/mttzzz/pgsync/internal/config"
 	"github.com/mttzzz/pgsync/internal/engine"
+	"github.com/mttzzz/pgsync/internal/secrets/infisical"
 )
+
+/* DBNameResolver resolves the project DB name (e.g. via Infisical).
+ * Implementations live in internal/secrets/*. */
+type DBNameResolver interface {
+	ResolveDBName(ctx context.Context) (string, error)
+}
 
 // Resolver resolves configuration from defaults, a TOML file, environment, and CLI flags.
 type Resolver struct {
 	StorePath string
 	Env       map[string]string
+	Infisical DBNameResolver
 }
 
 // FlagOverrides contains command-line values that may override config/env values.
@@ -66,6 +74,27 @@ func (r Resolver) Resolve(ctx context.Context, flags FlagOverrides) (config.Conf
 	if loadErr != nil && !connectionHostsProvided(env, flags) {
 		return config.Config{}, fmt.Errorf("load config: %w", loadErr)
 	}
+
+	if strings.TrimSpace(cfg.Remote.Database) == "" || strings.TrimSpace(cfg.Local.Database) == "" {
+		resolver := r.Infisical
+		if resolver == nil {
+			resolver = infisical.Resolver{}
+		}
+		name, resolveErr := resolver.ResolveDBName(ctx)
+		if resolveErr != nil {
+			return config.Config{}, resolveErr
+		}
+		if strings.TrimSpace(cfg.Remote.Database) == "" {
+			cfg.Remote.Database = name
+		}
+		if strings.TrimSpace(cfg.Local.Database) == "" {
+			cfg.Local.Database = name
+		}
+		if strings.TrimSpace(cfg.Runtime.DefaultDatabase) == "" {
+			cfg.Runtime.DefaultDatabase = name
+		}
+	}
+
 	if err := config.Validate(cfg); err != nil {
 		return config.Config{}, err
 	}

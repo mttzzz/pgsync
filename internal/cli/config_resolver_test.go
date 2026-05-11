@@ -140,10 +140,14 @@ func TestResolverUsesPostgresURLForLocalAndDefaultDatabase(t *testing.T) {
 func TestResolverIgnoresConfigLoadErrorWhenEnvSuppliesHosts(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "missing.toml")
-	got, err := (Resolver{StorePath: missing, Env: map[string]string{
-		"PGSYNC_REMOTE_HOST": "env-remote",
-		"PGSYNC_LOCAL_HOST":  "env-local",
-	}}).Resolve(context.Background(), FlagOverrides{})
+	got, err := (Resolver{
+		StorePath: missing,
+		Env: map[string]string{
+			"PGSYNC_REMOTE_HOST": "env-remote",
+			"PGSYNC_LOCAL_HOST":  "env-local",
+		},
+		Infisical: &stubInfisical{fn: func(context.Context) (string, error) { return "test-db", nil }},
+	}).Resolve(context.Background(), FlagOverrides{})
 	require.NoError(t, err)
 	assert.Equal(t, "env-remote", got.Remote.Host)
 	assert.Equal(t, "env-local", got.Local.Host)
@@ -153,7 +157,11 @@ func TestResolverIgnoresMalformedConfigWhenFlagsSupplyHosts(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "bad.toml")
 	require.NoError(t, os.WriteFile(path, []byte("not = [valid toml"), 0o600))
-	got, err := (Resolver{StorePath: path, Env: map[string]string{}}).Resolve(context.Background(), FlagOverrides{
+	got, err := (Resolver{
+		StorePath: path,
+		Env:       map[string]string{},
+		Infisical: &stubInfisical{fn: func(context.Context) (string, error) { return "test-db", nil }},
+	}).Resolve(context.Background(), FlagOverrides{
 		Remote: config.Connection{Host: "flag-remote"},
 		Local:  config.Connection{Host: "flag-local"},
 	})
@@ -310,4 +318,75 @@ func TestExitCode(t *testing.T) {
 	assert.Equal(t, 0, ExitCode(nil))
 	assert.Equal(t, 2, ExitCode(ErrNotImplemented))
 	assert.Equal(t, 1, ExitCode(errors.New("ordinary")))
+}
+
+func TestResolverSkipsInfisicalWhenDatabaseAlreadySet(t *testing.T) {
+	t.Parallel()
+	called := 0
+	r := Resolver{
+		StorePath: writeTestConfig(t, testConfig()),
+		Env:       map[string]string{},
+		Infisical: &stubInfisical{
+			fn: func(context.Context) (string, error) {
+				called++
+				return "should_not_be_called", nil
+			},
+		},
+	}
+	cfg, err := r.Resolve(context.Background(), FlagOverrides{
+		Remote: config.Connection{Database: "from_flag"},
+		Local:  config.Connection{Database: "from_flag"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "from_flag", cfg.Remote.Database)
+	assert.Equal(t, 0, called)
+}
+
+func TestResolverInvokesInfisicalWhenDatabaseUnset(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig()
+	cfg.Remote.Database = ""
+	cfg.Local.Database = ""
+	cfg.Runtime.DefaultDatabase = ""
+
+	r := Resolver{
+		StorePath: writeTestConfig(t, cfg),
+		Env:       map[string]string{},
+		Infisical: &stubInfisical{
+			fn: func(context.Context) (string, error) { return "resolved_db", nil },
+		},
+	}
+	got, err := r.Resolve(context.Background(), FlagOverrides{})
+	require.NoError(t, err)
+	assert.Equal(t, "resolved_db", got.Remote.Database)
+	assert.Equal(t, "resolved_db", got.Local.Database)
+	assert.Equal(t, "resolved_db", got.Runtime.DefaultDatabase)
+}
+
+func TestResolverPropagatesInfisicalError(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig()
+	cfg.Remote.Database = ""
+	cfg.Local.Database = ""
+	cfg.Runtime.DefaultDatabase = ""
+	r := Resolver{
+		StorePath: writeTestConfig(t, cfg),
+		Env:       map[string]string{},
+		Infisical: &stubInfisical{
+			fn: func(context.Context) (string, error) {
+				return "", errors.New("pgsync: no .infisical.json found")
+			},
+		},
+	}
+	_, err := r.Resolve(context.Background(), FlagOverrides{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no .infisical.json")
+}
+
+type stubInfisical struct {
+	fn func(context.Context) (string, error)
+}
+
+func (s *stubInfisical) ResolveDBName(ctx context.Context) (string, error) {
+	return s.fn(ctx)
 }

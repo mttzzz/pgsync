@@ -192,7 +192,14 @@ func TestSyncReturnsPlanOptionsError(t *testing.T) {
 	cfg := testConfig()
 	cfg.Runtime.DefaultDatabase = ""
 	cfg.Remote.Database = ""
-	err := runSync(context.Background(), normalizeApp(appWithEngine(fake)), FlagOverrides{ConfigPath: writeTestConfig(t, cfg)}, SyncFlags{}, " ")
+	cfg.Local.Database = ""
+	/* Inject a ResolveFn that returns the config directly, bypassing Infisical,
+	 * so that PlanOptionsFromConfig sees the empty database and returns its own error. */
+	app := normalizeApp(appWithEngine(fake))
+	app.ResolveFn = func(_ context.Context, _ FlagOverrides) (config.Config, error) {
+		return cfg, nil
+	}
+	err := runSync(context.Background(), app, FlagOverrides{ConfigPath: writeTestConfig(t, cfg)}, SyncFlags{}, " ")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database is required")
 	assert.Zero(t, fake.planCalls)
