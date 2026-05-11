@@ -192,28 +192,6 @@ func TestPlanOptionsFromConfigValidationError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestDotEnvParsing(t *testing.T) {
-	t.Parallel()
-	key, value, ok := parseDotEnvLine("export POSTGRES_URL='postgres://u:p@h/db'")
-	assert.True(t, ok)
-	assert.Equal(t, "POSTGRES_URL", key)
-	assert.Equal(t, "postgres://u:p@h/db", value)
-	key, value, ok = parseDotEnvLine(`NUXT_DB_NAME="app"`)
-	assert.True(t, ok)
-	assert.Equal(t, "NUXT_DB_NAME", key)
-	assert.Equal(t, "app", value)
-	key, value, ok = parseDotEnvLine("A=value # comment")
-	assert.True(t, ok)
-	assert.Equal(t, "A", key)
-	assert.Equal(t, "value", value)
-	_, _, ok = parseDotEnvLine("# comment")
-	assert.False(t, ok)
-	_, _, ok = parseDotEnvLine("invalid")
-	assert.False(t, ok)
-	_, _, ok = parseDotEnvLine("=value")
-	assert.False(t, ok)
-	assert.Empty(t, loadDotEnv(filepath.Join(t.TempDir(), "missing.env")))
-}
 
 func TestEnvMap(t *testing.T) {
 	t.Parallel()
@@ -268,7 +246,7 @@ func clearPGSyncEnv(t *testing.T) {
 		"PGSYNC_REMOTE_DATABASE", "PGSYNC_REMOTE_SSL_MODE", "PGSYNC_REMOTE_PROXY_URL",
 		"PGSYNC_LOCAL_HOST", "PGSYNC_LOCAL_PORT", "PGSYNC_LOCAL_USER", "PGSYNC_LOCAL_PASSWORD",
 		"PGSYNC_LOCAL_SSL_MODE", "PGSYNC_THREADS", "PGSYNC_ENGINE", "PGSYNC_USE_SYSTEM_PGTOOLS",
-		"PGSYNC_DEFAULT_DATABASE", "PGSYNC_CONCURRENT_INDEXES", "PGSYNC_LOG_LEVEL", "PGSYNC_LOG_FORMAT", "POSTGRES_URL",
+		"PGSYNC_DEFAULT_DATABASE", "PGSYNC_CONCURRENT_INDEXES", "PGSYNC_LOG_LEVEL", "PGSYNC_LOG_FORMAT",
 	}
 	for _, key := range keys {
 		t.Setenv(key, "")

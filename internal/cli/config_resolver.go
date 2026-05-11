@@ -46,7 +46,7 @@ type SyncFlags struct {
 	Analyze bool
 }
 
-// Resolve resolves configuration using .env plus the process environment.
+// Resolve resolves configuration using the process environment.
 func Resolve(ctx context.Context, flags FlagOverrides) (config.Config, error) {
 	return Resolver{Env: processEnv()}.Resolve(ctx, flags)
 }
@@ -236,14 +236,11 @@ func connectionHostsProvided(env map[string]string, flags FlagOverrides) bool {
 	if local == "" {
 		local = strings.TrimSpace(env["PGSYNC_LOCAL_HOST"])
 	}
-	if local == "" {
-		local = strings.TrimSpace(env["POSTGRES_URL"])
-	}
 	return remote != "" && local != ""
 }
 
 func processEnv() map[string]string {
-	env := loadDotEnv(".env")
+	env := make(map[string]string)
 	for key, value := range envMap(os.Environ()) {
 		if strings.TrimSpace(value) == "" {
 			continue
@@ -251,52 +248,6 @@ func processEnv() map[string]string {
 		env[key] = value
 	}
 	return env
-}
-
-func loadDotEnv(path string) map[string]string {
-	content, err := os.ReadFile(path) // #nosec G304 -- .env is intentionally loaded from the caller's working directory.
-	if err != nil {
-		return map[string]string{}
-	}
-	env := make(map[string]string)
-	for _, line := range strings.Split(string(content), "\n") {
-		key, value, ok := parseDotEnvLine(line)
-		if ok {
-			env[key] = value
-		}
-	}
-	return env
-}
-
-func parseDotEnvLine(line string) (string, string, bool) {
-	line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
-	if line == "" || strings.HasPrefix(line, "#") {
-		return "", "", false
-	}
-	line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
-	key, value, ok := strings.Cut(line, "=")
-	if !ok {
-		return "", "", false
-	}
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return "", "", false
-	}
-	return key, parseDotEnvValue(value), true
-}
-
-func parseDotEnvValue(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) >= 2 {
-		quote := value[0]
-		if (quote == '\'' || quote == '"') && value[len(value)-1] == quote {
-			return value[1 : len(value)-1]
-		}
-	}
-	if before, _, ok := strings.Cut(value, " #"); ok {
-		value = before
-	}
-	return strings.TrimSpace(value)
 }
 
 func envMap(entries []string) map[string]string {
