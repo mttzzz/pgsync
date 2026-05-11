@@ -192,7 +192,6 @@ func TestPlanOptionsFromConfigValidationError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-
 func TestEnvMap(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, map[string]string{"A": "1"}, envMap([]string{"A=1", "ignored"}))
