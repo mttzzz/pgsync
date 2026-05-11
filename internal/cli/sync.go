@@ -36,7 +36,20 @@ func newSyncCommand(app App, globals *globalFlags) *cobra.Command {
 }
 
 func runSync(ctx context.Context, app App, overrides FlagOverrides, syncFlags SyncFlags, db string) error {
-	cfg, err := Resolve(ctx, overrides)
+	db = strings.TrimSpace(db)
+	if db != "" {
+		if overrides.Remote.Database == "" {
+			overrides.Remote.Database = db
+		}
+		if overrides.Local.Database == "" {
+			overrides.Local.Database = db
+		}
+	}
+	resolveFn := app.ResolveFn
+	if resolveFn == nil {
+		resolveFn = Resolve
+	}
+	cfg, err := resolveFn(ctx, overrides)
 	if err != nil {
 		return err
 	}

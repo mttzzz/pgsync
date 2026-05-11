@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mttzzz/pgsync/internal/config"
 	"github.com/mttzzz/pgsync/internal/engine"
 	"github.com/mttzzz/pgsync/internal/models"
 )
@@ -225,6 +227,24 @@ func TestSyncReturnsExecuteErrorWithSecretsRedacted(t *testing.T) {
 	assert.Equal(t, 1, fake.executeCalls)
 	assert.NotContains(t, err.Error(), "local-pass")
 	assert.Contains(t, err.Error(), "******")
+}
+
+func TestRunSyncPositionalArgPopulatesOverrideDatabases(t *testing.T) {
+	t.Parallel()
+	var seen FlagOverrides
+	app := App{
+		Out: io.Discard,
+		Err: io.Discard,
+		ResolveFn: func(_ context.Context, o FlagOverrides) (config.Config, error) {
+			seen = o
+			return config.Config{}, errors.New("stop after capture")
+		},
+	}
+	root := NewRootCommand(app)
+	root.SetArgs([]string{"sync", "from_positional", "--dry-run"})
+	_ = root.ExecuteContext(context.Background())
+	assert.Equal(t, "from_positional", seen.Remote.Database)
+	assert.Equal(t, "from_positional", seen.Local.Database)
 }
 
 func appWithEngine(fake *fakeEngine) App {

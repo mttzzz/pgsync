@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ type App struct {
 	Out           io.Writer
 	Err           io.Writer
 	In            io.Reader
+	ResolveFn     func(context.Context, FlagOverrides) (config.Config, error) /* injectable for tests */
 }
 
 type globalFlags struct {
@@ -105,6 +107,9 @@ func normalizeApp(app App) App {
 	if app.Updater == nil {
 		client := updater.NewClient()
 		app.Updater = client
+	}
+	if app.ResolveFn == nil {
+		app.ResolveFn = Resolve
 	}
 	return app
 }
