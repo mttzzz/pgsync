@@ -1,0 +1,11 @@
+# КОНТРАКТ ДОРОЖКИ ДЛЯ ЭТОГО ПРОЕКТА. Читает `lane` (herdr-lanes) на `lane up`.
+#
+# Go-верстак pgsync: unit, race, линт, сборка. Интеграционным тестам (`test/integration`, тег
+# `integration`) нужен Docker (testcontainers) — в поде его нет, они идут только в CI.
+#
+# [install] не нужен: автодетект движка по go.mod — `go mod download`.
+
+[image]
+# Свой runner+dev: Go, gcc/make (для `go test -race`) и golangci-lint — см. lanes/runner.Dockerfile.
+# Общий lanes/runner:1 — стек bun/node, Go в нём нет.
+ref = "build:lanes/runner.Dockerfile"
