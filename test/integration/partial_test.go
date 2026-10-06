@@ -30,7 +30,7 @@ func TestPartialPlanIncludesFKClosureAndExcludesUnrelatedTables(t *testing.T) {
 }
 
 func TestPartialSyncCopiesOnlyFKClosureData(t *testing.T) {
-	skipIfSystemPgDumpUnavailable(t)
+	skipIfSystemPgToolsUnavailable(t)
 	ctx, cancel := integrationContext(t)
 	defer cancel()
 

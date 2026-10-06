@@ -276,6 +276,13 @@ func TestExecuteHappyPathRunsStagesInOrder(t *testing.T) {
 	assert.Equal(t, 1, targetConn.closeCount)
 	assert.Equal(t, 1, copySourceConn.closeCount)
 	assert.Equal(t, 1, copyTargetConn.closeCount)
+	assert.Equal(t, 1, recorder.archiveRemoved)
+	assert.Equal(t, []nativeArchiveRestore{{
+		target:  pgdb.EndpointFromConfig(nativeValidPlan().Local, "appdb"),
+		archive: "schema.dump",
+		section: SchemaPostData,
+		jobs:    2,
+	}}, recorder.restores)
 	assert.Len(t, connector.calls, 4)
 	assert.Equal(t, "appdb", connector.calls[0].Database)
 	assert.Equal(t, "appdb", connector.calls[1].Database)
@@ -289,10 +296,11 @@ func TestExecuteHappyPathRunsStagesInOrder(t *testing.T) {
 func TestExecuteStageFailuresEmitFailedEventAndCleanup(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name          string
-		failStage     string
-		connectFailAt int
-		wantRetryable bool
+		name               string
+		failStage          string
+		connectFailAt      int
+		wantRetryable      bool
+		wantArchiveRemoved int
 	}{
 		{name: stageSnapshot, failStage: stageSnapshot},
 		{name: stageDumpPreData, failStage: stageDumpPreData},
@@ -302,8 +310,8 @@ func TestExecuteStageFailuresEmitFailedEventAndCleanup(t *testing.T) {
 		{name: stageApplyPreData, failStage: stageApplyPreData},
 		{name: stageCopyTables, failStage: stageCopyTables, wantRetryable: true},
 		{name: stageDumpPostData, failStage: stageDumpPostData},
-		{name: stageApplyPostData, failStage: stageApplyPostData},
-		{name: stageRepairSequences, failStage: stageRepairSequences},
+		{name: stageApplyPostData, failStage: stageApplyPostData, wantArchiveRemoved: 1},
+		{name: stageRepairSequences, failStage: stageRepairSequences, wantArchiveRemoved: 1},
 	}
 
 	for _, tt := range tests {
@@ -340,6 +348,7 @@ func TestExecuteStageFailuresEmitFailedEventAndCleanup(t *testing.T) {
 			if nativeStageReached(observer.events, stageConnectTarget) && tt.name != stageConnectTarget {
 				assert.Equal(t, 1, targetConn.closeCount)
 			}
+			assert.Equal(t, tt.wantArchiveRemoved, recorder.archiveRemoved)
 		})
 	}
 }
@@ -688,19 +697,30 @@ func (r nativeFakeRow) Scan(dest ...any) error {
 }
 
 type nativeStageRecorder struct {
-	calls       []string
-	failStage   string
-	cancelStage string
-	cancel      context.CancelFunc
+	calls          []string
+	failStage      string
+	cancelStage    string
+	cancel         context.CancelFunc
+	archiveRemoved int
+	restores       []nativeArchiveRestore
+}
+
+type nativeArchiveRestore struct {
+	target  pgdb.Endpoint
+	archive string
+	section SchemaSection
+	jobs    int
 }
 
 func installNativeStageFakes(eng *NativeEngine, recorder *nativeStageRecorder) {
 	eng.stages = nativeStages{
 		exportSnapshot:  recorder.exportSnapshot,
 		dumpSchema:      recorder.dumpSchema,
+		dumpArchive:     recorder.dumpArchive,
 		checkExtensions: recorder.checkExtensions,
 		resetTarget:     recorder.resetTarget,
 		applySQL:        recorder.applySQL,
+		restoreArchive:  recorder.restoreArchive,
 		copyTables:      recorder.copyTables,
 		repairSequences: recorder.repairSequences,
 	}
@@ -715,9 +735,8 @@ func (r *nativeStageRecorder) exportSnapshot(_ context.Context, conn pgdb.CopyCo
 }
 
 func (r *nativeStageRecorder) dumpSchema(_ context.Context, _ pgdb.Endpoint, section SchemaSection) (string, error) {
-	stage := schemaDumpStage(section)
-	r.record(stage)
-	if r.shouldFail(stage) {
+	r.record(stageDumpPreData)
+	if r.shouldFail(stageDumpPreData) {
 		return "", nativeSecretError()
 	}
 	return string(section) + " SQL", nil
@@ -733,10 +752,9 @@ func (r *nativeStageRecorder) resetTarget(_ context.Context, _ config.Connection
 	return r.stageErr(stageResetTarget)
 }
 
-func (r *nativeStageRecorder) applySQL(_ context.Context, _ pgdb.CopyConn, section SchemaSection, _ string) error {
-	stage := schemaApplyStage(section)
-	r.record(stage)
-	return r.stageErr(stage)
+func (r *nativeStageRecorder) applySQL(_ context.Context, _ pgdb.CopyConn, _ SchemaSection, _ string) error {
+	r.record(stageApplyPreData)
+	return r.stageErr(stageApplyPreData)
 }
 
 func (r *nativeStageRecorder) copyTables(ctx context.Context, opts CopyTablesOptions) (*models.SyncResult, error) {
@@ -757,18 +775,24 @@ func (r *nativeStageRecorder) repairSequences(_ context.Context, _ pgdb.CopyConn
 	return r.stageErr(stageRepairSequences)
 }
 
-func schemaDumpStage(section SchemaSection) string {
-	if section == SchemaPostData {
-		return stageDumpPostData
+func (r *nativeStageRecorder) dumpArchive(_ context.Context, _ pgdb.Endpoint) (string, func(), error) {
+	r.record(stageDumpPostData)
+	if r.shouldFail(stageDumpPostData) {
+		return "", nil, nativeSecretError()
 	}
-	return stageDumpPreData
+	return "schema.dump", func() { r.archiveRemoved++ }, nil
 }
 
-func schemaApplyStage(section SchemaSection) string {
-	if section == SchemaPostData {
-		return stageApplyPostData
-	}
-	return stageApplyPreData
+func (r *nativeStageRecorder) restoreArchive(
+	_ context.Context,
+	target pgdb.Endpoint,
+	archive string,
+	section SchemaSection,
+	jobs int,
+) error {
+	r.record(stageApplyPostData)
+	r.restores = append(r.restores, nativeArchiveRestore{target: target, archive: archive, section: section, jobs: jobs})
+	return r.stageErr(stageApplyPostData)
 }
 
 func closeFactoryConns(ctx context.Context, opts CopyTablesOptions) error {

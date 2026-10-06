@@ -10,6 +10,13 @@ All notable changes to pgsync. Format: [Keep a Changelog](https://keepachangelog
   database whenever `local.Database` matches the sync target, fixing
   `cannot drop the currently open database` (SQLSTATE 55006) when
   `POSTGRES_URL` is used.
+- Post-data schema (indexes, constraints, triggers) is restored by parallel
+  `pg_restore --jobs=<threads>` from a temporary custom-format schema archive
+  instead of one sequential SQL script; `--threads` / `[runtime] threads` now
+  sets the number of `pg_restore` jobs as well as the table copy workers. The
+  archive keeps the whole schema and only the post-data section is restored, so
+  `pg_restore` can still schedule conflicting `ALTER TABLE` jobs apart. Stage
+  names and NDJSON events are unchanged.
 
 ### Added
 - `DB_DATABASE` env (Laravel/Symfony convention) sets the local target database

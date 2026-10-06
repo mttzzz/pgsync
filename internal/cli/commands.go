@@ -116,7 +116,7 @@ func normalizeApp(app App) App {
 
 func addGlobalFlags(cmd *cobra.Command, flags *globalFlags) {
 	cmd.PersistentFlags().StringVar(&flags.ConfigPath, "config", "", "path to config TOML")
-	cmd.PersistentFlags().IntVar(&flags.Threads, "threads", 0, "copy worker count")
+	cmd.PersistentFlags().IntVar(&flags.Threads, "threads", 0, "parallel workers: table copies and pg_restore jobs")
 	cmd.PersistentFlags().StringVar(&flags.Engine, "engine", "", "engine mode: auto, native, external")
 	cmd.PersistentFlags().BoolVar(&flags.UseSystemPgtools, "use-system-pgtools", false, "use pg_dump/pg_restore from PATH")
 	cmd.PersistentFlags().StringVar(&flags.Output, "output", "text", "output format: text or json")

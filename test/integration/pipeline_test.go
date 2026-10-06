@@ -41,7 +41,7 @@ var tinySyncTables = []string{
 }
 
 func TestNativePipelineSyncsTinyFixture(t *testing.T) {
-	skipIfSystemPgDumpUnavailable(t)
+	skipIfSystemPgToolsUnavailable(t)
 	ctx, cancel := integrationContext(t)
 	defer cancel()
 
@@ -84,21 +84,22 @@ func integrationContext(t testing.TB) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), harnessTimeout)
 }
 
-func skipIfSystemPgDumpUnavailable(t testing.TB) {
+func skipIfSystemPgToolsUnavailable(t testing.TB) {
 	t.Helper()
 
-	bin := pgtools.BinDump()
-	path, err := exec.LookPath(bin)
-	if err != nil {
-		t.Skipf("skipping real native sync: %s is required but was not found in PATH: %v", bin, err)
-	}
+	for _, bin := range []string{pgtools.BinDump(), pgtools.BinRestore()} {
+		path, err := exec.LookPath(bin)
+		if err != nil {
+			t.Skipf("skipping real native sync: %s is required but was not found in PATH: %v", bin, err)
+		}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, path, "--version") //nolint:gosec // Test validates the discovered pg_dump before using it.
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Skipf("skipping real native sync: %s --version failed: %v; output: %s", path, err, strings.TrimSpace(string(output)))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cmd := exec.CommandContext(ctx, path, "--version") //nolint:gosec // Test validates the discovered tool before using it.
+		output, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			t.Skipf("skipping real native sync: %s --version failed: %v; output: %s", path, err, strings.TrimSpace(string(output)))
+		}
 	}
 }
 

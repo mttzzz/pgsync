@@ -51,9 +51,11 @@ type NativeEngine struct {
 type nativeStages struct {
 	exportSnapshot  func(context.Context, pgdb.CopyConn) (*Snapshot, error)
 	dumpSchema      func(context.Context, pgdb.Endpoint, SchemaSection) (string, error)
+	dumpArchive     func(context.Context, pgdb.Endpoint) (string, func(), error)
 	checkExtensions func(context.Context, config.Connection, string) error
 	resetTarget     func(context.Context, config.Connection, string) error
 	applySQL        func(context.Context, pgdb.CopyConn, SchemaSection, string) error
+	restoreArchive  func(context.Context, pgdb.Endpoint, string, SchemaSection, int) error
 	copyTables      func(context.Context, CopyTablesOptions) (*models.SyncResult, error)
 	repairSequences func(context.Context, pgdb.CopyConn, []models.Sequence) error
 }
@@ -187,14 +189,17 @@ func missingDependencies(deps Dependencies) []string {
 
 func productionStages(deps Dependencies) nativeStages {
 	dumper := &SchemaDumper{Runner: deps.Runner, Locator: deps.Locator}
+	restorer := &ArchiveRestorer{Runner: deps.Runner, Locator: deps.Locator}
 	target := &TargetManager{Connector: deps.Connector}
 	extensions := &ExtensionChecker{Connector: deps.Connector}
 	return nativeStages{
 		exportSnapshot:  ExportSnapshot,
 		dumpSchema:      dumper.Dump,
+		dumpArchive:     dumper.DumpArchive,
 		checkExtensions: extensions.CheckPreData,
 		resetTarget:     target.ResetDatabase,
 		applySQL:        ApplySQL,
+		restoreArchive:  restorer.Restore,
 		copyTables:      CopyTables,
 		repairSequences: RepairSequences,
 	}
@@ -352,11 +357,14 @@ func (r *executionRun) executeStages() (err error) {
 	if err := r.copyTables(remote, local, snapshot.ID); err != nil {
 		return err
 	}
-	postDataSQL, err := r.dumpSchema(remote, SchemaPostData, stageDumpPostData)
+	archivePath, removeArchive, err := r.dumpPostData(remote)
 	if err != nil {
 		return err
 	}
-	if err := r.applySQL(target, SchemaPostData, postDataSQL, stageApplyPostData); err != nil {
+	defer removeArchive()
+	if err := r.runVoidStage(stageApplyPostData, func(ctx context.Context) error {
+		return r.engine.stages.restoreArchive(ctx, local, archivePath, SchemaPostData, r.plan.Threads)
+	}); err != nil {
 		return err
 	}
 	return r.runVoidStage(stageRepairSequences, func(ctx context.Context) error {
@@ -393,6 +401,19 @@ func (r *executionRun) dumpSchema(remote pgdb.Endpoint, section SchemaSection, s
 		return err
 	})
 	return sql, err
+}
+
+// dumpPostData dumps the remote schema into the temporary archive that apply-post-data restores
+// the post-data section from. The returned func deletes the archive and is non-nil on success.
+func (r *executionRun) dumpPostData(remote pgdb.Endpoint) (string, func(), error) {
+	var archivePath string
+	var removeArchive func()
+	err := r.runVoidStage(stageDumpPostData, func(ctx context.Context) error {
+		var err error
+		archivePath, removeArchive, err = r.engine.stages.dumpArchive(ctx, remote)
+		return err
+	})
+	return archivePath, removeArchive, err
 }
 
 func (r *executionRun) checkExtensions(preDataSQL string) error {

@@ -13,7 +13,7 @@ import (
 )
 
 func TestCLISyncJSONModeEmitsLifecycleEvents(t *testing.T) {
-	skipIfSystemPgDumpUnavailable(t)
+	skipIfSystemPgToolsUnavailable(t)
 	ctx, cancel := integrationContext(t)
 	defer cancel()
 

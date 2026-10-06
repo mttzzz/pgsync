@@ -14,7 +14,7 @@ import (
 )
 
 func TestNativeSyncCancellationDuringCopyFailsAndRetrySucceeds(t *testing.T) {
-	skipIfSystemPgDumpUnavailable(t)
+	skipIfSystemPgToolsUnavailable(t)
 	baseCtx, cancelBase := integrationContext(t)
 	defer cancelBase()
 
